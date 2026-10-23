@@ -28,5 +28,18 @@ Analysis of similar articles / applications / projects from the last 5 years.
 
 ## Proposed Architecture
 
+![Proposed System Architecture](docs/architecture.png)
 
 ### Components
+
+1. **FOCUS Dataset:** Ingestion of 300 fetal ultrasound images in the 4-Chamber View (4CH) provided with corresponding ground-truth ellipse parameter labels for the heart and chest regions.
+2. **Data Loading & Ground Truth:** Partitioning the dataset into training, validation, and testing subsets, followed by converting parametric ellipse annotations into binary segmentation masks for model supervision.
+3. **Preprocessing:** Contrast enhancement and noise suppression pipelines utilizing median filtering, bilateral filtering, and CLAHE (Contrast Limited Adaptive Histogram Equalization) to mitigate characteristic ultrasound speckle noise.
+4. **Segmentation Module:**
+   - **4a. Classical Segmentation:** Baseline algorithmic approach combining Otsu thresholding for thorax isolation and Chan-Vese active contours for heart region extraction.
+   - **4b. Deep Learning Segmentation:** Primary supervised semantic segmentation pipeline utilizing a U-Net convolutional neural network trained on ground-truth masks.
+5. **Post-Processing:** Mask refinement through largest connected component extraction and geometric ellipse fitting to obtain smoothed, geometrically consistent boundaries.
+6. **Segmentation Evaluation:** Quantitative validation comparing predicted segmentation masks against ground-truth annotations using metrics such as the Dice Similarity Coefficient (DSC) and 95th percentile Hausdorff Distance (HD95).
+7. **Measurements:** Automated calculation of key clinical biometrics, specifically the Cardiothoracic Ratio (CTR) and the cardiac axis orientation.
+8. **Anomaly Detection:** Rule-based screening mechanism that flags potential congenital cardiac anomalies (e.g., cardiomegaly) whenever the computed CTR exceeds clinical safety thresholds.
+9. **Results & Comparison:** Synthesis of comparative metrics, performance tables, and graphical plots evaluating the classical (Chan-Vese) versus deep learning (U-Net) segmentation approaches.
