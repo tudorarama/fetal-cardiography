@@ -1,0 +1,13 @@
+numpy
+opencv-python
+scikit-image
+scipy
+matplotlib
+pandas
+tqdm
+jupyter
+torch
+monai
+# optional: SAM-assisted chamber annotation (scripts/annotate_chambers.py)
+torchvision
+segment-anything

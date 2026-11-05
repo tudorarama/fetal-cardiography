@@ -1,0 +1,27 @@
+# Datasets (FOCUS, FETAL_PLANES_DB) - too large for Git
+data/
+
+# Pretrained weights (SAM, ~360 MB): see four_chambers/sam_assist.py for the download link
+models/
+
+# Outputs
+results/
+four_chambers/nnunet/
+*.log
+*.pth
+*.pt
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Local tool settings
+.claude/
