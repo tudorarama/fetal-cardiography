@@ -4,14 +4,25 @@ Run from the four_chambers folder:
     python annotate.py            # continues where you left off
     python annotate.py --status   # progress only
     python annotate.py --start 7  # jump to the 7th image of the list
+    python annotate.py --no-sam   # manual drawing only
+    python annotate.py --extend   # append the remaining FOCUS train/val images to the list
 
 The list of images (annotations/selection.json) is fixed once, with a seed:
 30 train, 10 val, 10 test, interleaved (3 train, 1 val, 1 test, ...), so that
-any prefix of the list is still balanced if you stop early.
+any prefix of the list is still balanced if you stop early. --extend appends
+the other train/val images (the test set stays the same).
 
-Drawing: left drag / clicks trace the outline, ENTER / right click close it.
+Two drawing modes (key a switches):
+  SAM mode (default when ../models/sam_vit_b_01ec64.pth exists, see sam_assist.py)
+    left click      point INSIDE the structure      -> SAM proposes a mask
+    left drag       box around the structure (more stable than a point)
+    right click     point OUTSIDE (removes a leak)
+    m               next SAM proposal (they are sorted by size)
+    ENTER           accept the mask for the current structure
+  manual mode
+    left drag / clicks   trace the outline,   ENTER / right click  close it
 
-Keys
+Keys in both modes
     1 LV   2 RV   3 LA   4 RA
     optional landmarks, only for the cardiac axis (one is enough, spine preferred):
     5 spine (vertebral body)   6 aorta (descending aorta, dark circle in front of the spine)
@@ -58,6 +69,23 @@ def load_case(split, name):
     return load_image(split, name), None, load_focus_masks(split, name)
 
 
+def extend_selection(order, ann_dir):
+    """Appends every train/val image not yet in the list (3 train, 1 val, ...); test is fixed."""
+    have = {tuple(x) for x in order}
+    rng = np.random.default_rng(1)
+    rest = {s: [str(n) for n in rng.permutation(list_cases(s)) if (s, str(n)) not in have]
+            for s in ("train", "val")}
+    added = 0
+    while any(rest.values()):
+        for s in ("train", "train", "train", "val"):
+            if rest[s]:
+                order.append([s, rest[s].pop(0)])
+                added += 1
+    (Path(ann_dir) / "selection.json").write_text(json.dumps(order, indent=1))
+    print(f"added {added} images to the list (now {len(order)})")
+    return order
+
+
 def selection(ann_dir):
     path = Path(ann_dir) / "selection.json"
     if path.exists():
@@ -87,10 +115,10 @@ def status(order, ann_dir):
 
 
 class Annotator:
-    def __init__(self, order, ann_dir, start):
-        self.order, self.ann_dir, self.i = order, ann_dir, start
-        self.enhance, self.guide = True, True
-        self.drawing, self.points = False, []
+    def __init__(self, order, ann_dir, start, sam=None):
+        self.order, self.ann_dir, self.i, self.sam = order, ann_dir, start, sam
+        self.enhance, self.guide, self.use_sam = True, True, sam is not None
+        self.drawing, self.points, self.down = False, [], None
         self.confirm_skip = False
         self.status_cache = status(order, ann_dir)
         cv2.namedWindow(WIN, cv2.WINDOW_AUTOSIZE)
@@ -120,9 +148,20 @@ class Annotator:
                            "skipped": False, "polygons": {}}
         self.cls = self.next_missing() or CLASSES[0]
         self.reset_prompt()
+        if self.sam is not None:
+            self.message("SAM is reading the image...")
+            self.sam.set_image((self.i, self.enhance), self.rgb(self.view))
+            for j in (self.i + 1, self.i - 1):  # prepare the neighbours in the background
+                if 0 <= j < len(self.order):
+                    self.sam.prefetch((j, self.enhance), self.rgb(self.view_image(j, self.enhance)[3]))
+
+    @staticmethod
+    def rgb(gray):
+        return np.ascontiguousarray(np.stack([gray] * 3, -1))
 
     def reset_prompt(self):
-        self.points = []
+        self.points, self.sam_pts, self.sam_box = [], [], None
+        self.proposals, self.k = [], 0
 
     def save(self):
         if self.ann["polygons"] or self.ann.get("skipped"):
@@ -141,9 +180,54 @@ class Annotator:
         x0, y0, _ = self.box
         return [round(x / self.scale + x0, 1), round(y / self.scale + y0, 1)]
 
+    # ------------------------------------------------------------------- SAM
+    def others_mask(self):
+        """Pixels already taken by the other structures (a new mask may not overlap them)."""
+        m = np.zeros((VIEW, VIEW), np.uint8)
+        for c, pts in self.ann["polygons"].items():
+            if c != self.cls and len(pts) >= 3:
+                cv2.fillPoly(m, [np.round(self.to_view(pts)).astype(np.int32)], 1)
+        return m.astype(bool)
+
+    def run_sam(self):
+        if not self.sam_pts and self.sam_box is None:
+            self.proposals = []
+            return
+        allowed = self.allowed["thorax" if self.cls in OPTIONAL else "heart"] & ~self.others_mask()
+        pts = [(x, y) for x, y, _ in self.sam_pts]
+        labels = [l for _, _, l in self.sam_pts]
+        self.proposals = self.sam.proposals(pts, labels, self.sam_box, allowed)
+        self.k = 0
+
+    def accept_sam(self):
+        from sam_assist import mask_to_polygon
+        if self.proposals:
+            poly = mask_to_polygon(self.proposals[self.k])
+            if len(poly) >= 3:
+                self.ann["polygons"][self.cls] = [self.to_image(x, y) for x, y in poly]
+                self.ann["skipped"] = False
+                self.cls = self.next_missing() or self.cls
+        self.reset_prompt()
+
     # ---------------------------------------------------------------- events
     def on_mouse(self, event, x, y, flags, _):
         if x >= VIEW or y >= VIEW:
+            return
+        if self.use_sam:
+            if event == cv2.EVENT_LBUTTONDOWN:
+                self.down, self.drag_to = (x, y), (x, y)
+            elif event == cv2.EVENT_MOUSEMOVE and self.down:
+                self.drag_to = (x, y)
+            elif event == cv2.EVENT_LBUTTONUP and self.down:
+                (x0, y0), self.down = self.down, None
+                if abs(x - x0) > DRAG or abs(y - y0) > DRAG:
+                    self.sam_box = (min(x0, x), min(y0, y), max(x0, x), max(y0, y))
+                else:
+                    self.sam_pts.append((x, y, 1))
+                self.run_sam()
+            elif event == cv2.EVENT_RBUTTONDOWN:
+                self.sam_pts.append((x, y, 0))
+                self.run_sam()
             return
         if event == cv2.EVENT_LBUTTONDOWN:
             self.drawing = True
@@ -175,12 +259,23 @@ class Annotator:
             self.cls = STRUCTURES[int(ch) - 1]
             self.reset_prompt()
         elif k in (13, 10):
-            self.close_polygon()
+            self.accept_sam() if self.use_sam else self.close_polygon()
+        elif ch == "m" and self.proposals:
+            self.k = (self.k + 1) % len(self.proposals)
+        elif ch == "a" and self.sam is not None:
+            self.use_sam = not self.use_sam
+            self.reset_prompt()
         elif ch == "z":
             if self.ann.get("skipped"):  # undo "not usable": bring the drawing back
                 self.ann["skipped"] = False
                 self.ann["polygons"] = self.ann.pop("discarded", {}) or self.ann["polygons"]
                 self.cls = self.next_missing() or self.cls
+            elif self.use_sam and (self.sam_pts or self.sam_box):
+                if self.sam_pts:
+                    self.sam_pts.pop()
+                else:
+                    self.sam_box = None
+                self.run_sam()
             elif self.points:
                 self.points.pop()
             else:
@@ -217,6 +312,12 @@ class Annotator:
         self.ann, self.cls = ann, cls
 
     # ---------------------------------------------------------------- render
+    def message(self, text):
+        frame = np.zeros((VIEW, VIEW + PANEL, 3), np.uint8)
+        cv2.putText(frame, text, (40, VIEW // 2), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv2.imshow(WIN, frame)
+        cv2.waitKey(1)
+
     def render(self):
         view = cv2.cvtColor(self.view, cv2.COLOR_GRAY2BGR)
         if self.guide:
@@ -227,6 +328,11 @@ class Annotator:
             p = np.round(self.to_view(pts)).astype(np.int32)
             cv2.fillPoly(fill, [p], COLORS[c])
             cv2.polylines(view, [p], True, COLORS[c], 2)
+        if self.proposals:
+            m = self.proposals[self.k]
+            fill[m] = COLORS[self.cls]
+            cnt, _ = cv2.findContours(m.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+            cv2.drawContours(view, cnt, -1, COLORS[self.cls], 1)
         view = cv2.addWeighted(fill, 0.3, view, 0.7, 0)
         for c, pts in self.ann["polygons"].items():
             m = np.mean(self.to_view(pts), axis=0).astype(int)
@@ -234,6 +340,13 @@ class Annotator:
         if self.points:
             p = np.round(self.to_view(self.points)).astype(np.int32)
             cv2.polylines(view, [p], False, COLORS[self.cls], 2)
+        for x, y, l in self.sam_pts:
+            cv2.circle(view, (x, y), 5, (0, 255, 0) if l else (0, 0, 255), -1)
+            cv2.circle(view, (x, y), 5, (0, 0, 0), 1)
+        if self.sam_box is not None:
+            cv2.rectangle(view, self.sam_box[:2], self.sam_box[2:], (255, 255, 255), 1)
+        if self.use_sam and self.down:
+            cv2.rectangle(view, self.down, self.drag_to, (200, 200, 200), 1)
         return np.hstack([view, self.panel()])
 
     def panel(self):
@@ -241,17 +354,26 @@ class Annotator:
         split, name = self.order[self.i]
         done, skipped = self.status_cache
         grey = (200, 200, 200)
+        mode = "SAM (a: manual)" if self.use_sam else ("manual (a: SAM)" if self.sam else "manual")
         lines = [(f"image {self.i + 1}/{len(self.order)}: {split} {name}", (255, 255, 255)),
                  (f"done train {done['train']} val {done['val']} test {done['test']}", grey),
-                 (f"skipped {skipped}", grey), ("", None),
+                 (f"skipped {skipped}", grey), (f"mode: {mode}", (0, 255, 255)), ("", None),
                  ("now drawing:", grey), (f"  {self.cls}", COLORS[self.cls])]
+        if self.use_sam:
+            lines.append((f"  proposal {self.k + 1}/{len(self.proposals)}" if self.proposals
+                          else "  (no proposal yet)", grey))
         lines.append(("", None))
         for i, c in enumerate(STRUCTURES, 1):
             ok = len(self.ann["polygons"].get(c, [])) >= 3
             opt = " (optional)" if c in OPTIONAL else ""
             lines.append((f"{i} {c:6s} {'OK' if ok else '--'}{opt}", COLORS[c]))
         lines.append(("", None))
-        lines += [("drag / click: draw", grey), ("ENTER / right click: close", grey)]
+        if self.use_sam:
+            lines += [("click: point inside", grey), ("drag: box around", grey),
+                      ("right click: point outside", grey), ("m: other proposal", grey),
+                      ("ENTER: accept", grey)]
+        else:
+            lines += [("drag / click: draw", grey), ("ENTER / right click: close", grey)]
         lines += [("z undo   c clear", grey), ("e contrast   g heart outline", grey),
                   ("n next   p previous", grey), ("x not usable   q quit", grey)]
         if self.ann.get("skipped"):
@@ -282,22 +404,36 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--start", type=int, help="1-based position in the list")
     ap.add_argument("--status", action="store_true")
+    ap.add_argument("--no-sam", action="store_true", help="manual drawing only")
     ap.add_argument("--ann-dir", default=str(ANN_DIR))
+    ap.add_argument("--extend", action="store_true",
+                    help="append the remaining FOCUS train/val images to the list")
     args = ap.parse_args()
 
     order = selection(args.ann_dir)
+    if args.extend:
+        order = extend_selection(order, args.ann_dir)
     done, skipped = status(order, args.ann_dir)
     print(f"annotated: train {done['train']}, val {done['val']}, test {done['test']} "
           f"(list of {len(order)} images), skipped {skipped}")
     if args.status:
         return
+    sam = None
+    if not args.no_sam:
+        from sam_assist import SamAssistant, available
+        if available():
+            print("loading SAM...")
+            sam = SamAssistant()
+        else:
+            print("SAM not available (pip install segment-anything torchvision and put "
+                  "sam_vit_b_01ec64.pth in ../models/): manual mode only")
     if args.start:
         start = args.start - 1
     else:
         start = next((i for i, (s, n) in enumerate(order)
                       if not (is_complete(a := load_annotation(s, n, args.ann_dir))
                               or (a and a.get("skipped")))), len(order) - 1)
-    Annotator(order, args.ann_dir, start).run()
+    Annotator(order, args.ann_dir, start, sam).run()
     done, skipped = status(order, args.ann_dir)
     print(f"saved. annotated: train {done['train']}, val {done['val']}, test {done['test']}, "
           f"skipped {skipped}")
