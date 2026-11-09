@@ -246,9 +246,9 @@ class Diagram:
                           f'<mxGeometry x="{x}" y="{y}" width="{w}" height="{h}" as="geometry"/></mxCell>')
         return h
 
-    def text(self, parent, x, y, w, h, text, size=11, color="#333333"):
+    def text(self, parent, x, y, w, h, text, size=11, color="#333333", align="center", rotation=0):
         i = self._id()
-        style = (f"text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;"
+        style = (f"text;html=1;align={align};verticalAlign=middle;whiteSpace=wrap;rotation={rotation};"
                  f"fontSize={size};fontColor={color};fontFamily=Helvetica;")
         self.cells.append(f'<mxCell id="{i}" value="{escape(text)}" style="{style}" vertex="1" parent="{parent}">'
                           f'<mxGeometry x="{x}" y="{y}" width="{w}" height="{h}" as="geometry"/></mxCell>')
@@ -387,11 +387,11 @@ def build(img):
     d.edge(c2, c3)
     d.edge(c3, c5)
     d.edge(c5, b8, exit_=(0, 0.85), entry=(1, 0.5), points=[(1300, 1709), (1300, 1855)])
-    d.edge(c3, c4, "predicted chambers", exit_=(1, 0.5), entry=(1, 0.5),
+    d.edge(c3, c4, exit_=(1, 0.5), entry=(1, 0.5),
            points=[(1880, 1220), (1880, 2000)])
     d.edge(c4, b9, exit_=(0, 0.5), entry=(1, 0.5))
     # ground truth paths
-    d.edge(b2, b6, "ground-truth masks", dashed=True, exit_=(0, 0.5), entry=(0, 0.5),
+    d.edge(b2, b6, dashed=True, exit_=(0, 0.5), entry=(0, 0.5),
            points=[(30, 330), (30, 1475)])
     d.edge(b2, b4b, "training masks", dashed=True, exit_=(1, 0.5), entry=(1, 0.5),
            points=[(1270, 330), (1270, 840)])
@@ -402,7 +402,10 @@ def build(img):
                 "<font color='#fac81e'>■</font> LA <font color='#3cc83c'>■</font> RA<br>"
                 "── data flow &nbsp; - - - ground truth", ("#ffffff", "#999999"))
     d.text("1", RX, 360, RW, 30, "<b>Four-chamber segmentation track</b>", 14, "#9673a6")
-    d.text("1", 60, 655, 1180, 30, "<b>Heart &amp; thorax track (CTR)</b>", 14, "#555555")
+    d.text("1", 75, 612, 250, 30, "<b>Heart &amp; thorax track (CTR)</b>", 14, "#555555", align="left")
+    # labels of the two long side edges, placed beside the line (not on it, not at the page edge)
+    d.text("1", 40, 306, 160, 20, "ground-truth masks", 11, "#333333", align="left")
+    d.text("1", 1820, 1590, 140, 20, "predicted chambers", 11, "#333333", rotation=90)
     return d.xml(W, 2070)
 
 
