@@ -25,3 +25,6 @@ Thumbs.db
 
 # Local tool settings
 .claude/
+
+# Old annotations kept as backup (not used)
+four_chambers/annotations_backup/
