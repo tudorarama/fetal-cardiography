@@ -75,8 +75,6 @@ Heart and thorax (FOCUS test set, 50 images):
 | Classical (Otsu + Chan-Vese) | 0.68 | 0.82 | 0.092 |
 | U-Net (MONAI, preprocessed input) | 0.92 | 0.96 | 0.025 |
 
-![Dice per method](docs/figures/heart_thorax_dice.png)
-
 Four chambers (nnU-Net v2 trained on 39 annotated images, tested on 10 test images drawn by hand without the model): mean Dice 0.68 (LV 0.69, RV 0.66, LA 0.69, RA 0.68), cardiac axis error 6°.
 
 ![Four-chamber predictions](docs/figures/four_chambers_test_examples.png)
