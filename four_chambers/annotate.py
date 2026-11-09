@@ -6,11 +6,17 @@ Run from the four_chambers folder:
     python annotate.py --start 7  # jump to the 7th image of the list
     python annotate.py --no-sam   # manual drawing only
     python annotate.py --extend   # append the remaining FOCUS train/val images to the list
+    python annotate.py --prefill  # open images already outlined by the model (predict.py --prefill)
 
 The list of images (annotations/selection.json) is fixed once, with a seed:
 30 train, 10 val, 10 test, interleaved (3 train, 1 val, 1 test, ...), so that
 any prefix of the list is still balanced if you stop early. --extend appends
 the other train/val images (the test set stays the same).
+
+Human in the loop (--prefill): an image without annotation opens with the
+chambers predicted by the trained nnU-Net; check every contour, redraw the wrong
+ones (c clears a structure) and save with n. "prefilled": true is kept in the
+JSON so it is known which annotations started from the model.
 
 Two drawing modes (key a switches):
   SAM mode (default when ../models/sam_vit_b_01ec64.pth exists, see sam_assist.py)
@@ -49,9 +55,11 @@ sys.path.insert(0, str(ROOT))
 import cv2
 import numpy as np
 
-from common import (clahe, crop, is_complete, list_cases, load_annotation, load_focus_masks,
-                    load_image, save_annotation, thorax_crop_box)
-from config import ANN_DIR, CHAMBERS as CLASSES, LANDMARKS as OPTIONAL
+from common import (clahe, crop, is_complete, labels_to_polygons, list_cases, load_annotation,
+                    load_focus_masks, load_image, save_annotation, thorax_crop_box)
+from config import ANN_DIR, CHAMBERS as CLASSES, LANDMARKS as OPTIONAL, PREDICTIONS_DIR
+
+PREFILL_DIR = PREDICTIONS_DIR / "prefill"
 
 N_PER_SPLIT = {"train": 30, "val": 10, "test": 10}
 PATTERN = ("train", "train", "train", "val", "test")
@@ -115,8 +123,9 @@ def status(order, ann_dir):
 
 
 class Annotator:
-    def __init__(self, order, ann_dir, start, sam=None):
+    def __init__(self, order, ann_dir, start, sam=None, prefill_dir=None):
         self.order, self.ann_dir, self.i, self.sam = order, ann_dir, start, sam
+        self.prefill_dir = prefill_dir
         self.enhance, self.guide, self.use_sam = True, True, sam is not None
         self.drawing, self.points, self.down = False, [], None
         self.confirm_skip = False
@@ -146,6 +155,11 @@ class Annotator:
         self.ann = ann or {"split": split, "name": name,
                            "image_size": [self.img.shape[1], self.img.shape[0]],
                            "skipped": False, "polygons": {}}
+        if ann is None and self.prefill_dir is not None:  # start from the model's prediction
+            p = Path(self.prefill_dir) / f"{split}_{name}.png"
+            if p.exists():
+                self.ann["polygons"] = labels_to_polygons(cv2.imread(str(p), cv2.IMREAD_GRAYSCALE))
+                self.ann["prefilled"] = True
         self.cls = self.next_missing() or CLASSES[0]
         self.reset_prompt()
         if self.sam is not None:
@@ -376,6 +390,9 @@ class Annotator:
             lines += [("drag / click: draw", grey), ("ENTER / right click: close", grey)]
         lines += [("z undo   c clear", grey), ("e contrast   g heart outline", grey),
                   ("n next   p previous", grey), ("x not usable   q quit", grey)]
+        if self.ann.get("prefilled"):
+            lines.append(("PREFILLED BY THE MODEL:", (0, 200, 255)))
+            lines.append(("check / correct every chamber", (0, 200, 255)))
         if self.ann.get("skipped"):
             lines.append(("MARKED NOT USABLE", (0, 0, 255)))
             lines.append(("z = undo (restores drawing)", (0, 0, 255)))
@@ -408,6 +425,8 @@ def main():
     ap.add_argument("--ann-dir", default=str(ANN_DIR))
     ap.add_argument("--extend", action="store_true",
                     help="append the remaining FOCUS train/val images to the list")
+    ap.add_argument("--prefill", nargs="?", const=str(PREFILL_DIR), default=None,
+                    help="folder of predicted label maps used as a starting point")
     args = ap.parse_args()
 
     order = selection(args.ann_dir)
@@ -433,7 +452,7 @@ def main():
         start = next((i for i, (s, n) in enumerate(order)
                       if not (is_complete(a := load_annotation(s, n, args.ann_dir))
                               or (a and a.get("skipped")))), len(order) - 1)
-    Annotator(order, args.ann_dir, start, sam).run()
+    Annotator(order, args.ann_dir, start, sam, args.prefill).run()
     done, skipped = status(order, args.ann_dir)
     print(f"saved. annotated: train {done['train']}, val {done['val']}, test {done['test']}, "
           f"skipped {skipped}")
