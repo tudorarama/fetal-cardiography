@@ -7,6 +7,12 @@ Run from the four_chambers folder:
     python annotate.py --no-sam   # manual drawing only
     python annotate.py --extend   # append the remaining FOCUS train/val images to the list
     python annotate.py --prefill  # open images already outlined by the model (predict.py --prefill)
+    python annotate.py --pick     # start on the image picker
+
+Choosing an image: key l opens a grid of all 300 FOCUS images (filters: all,
+train, val, test, to do, done; border colour = state). Click one to open it; an
+image that is not in the list yet is added to it (that is how more images are
+annotated). Test images are never pre-filled by the model.
 
 The list of images (annotations/selection.json) is fixed once, with a seed:
 30 train, 10 val, 10 test, interleaved (3 train, 1 val, 1 test, ...), so that
@@ -35,8 +41,9 @@ Keys in both modes
     z     undo last point (or delete the current structure)
     c     clear the current structure
     e     contrast enhancement on/off       g   heart outline (ground truth) on/off
-    n     save + next image
+    n     save + next image (after the last one: the next train/val image not done yet)
     p     save + previous image
+    l     choose an image (thumbnail grid of every FOCUS image)
     x     image not usable (chambers not visible) -> skipped, next. Asks for a second x
           if something is drawn; the drawing is kept, p then z brings it back
     q/ESC save + quit
@@ -123,9 +130,10 @@ def status(order, ann_dir):
 
 
 class Annotator:
-    def __init__(self, order, ann_dir, start, sam=None, prefill_dir=None):
+    def __init__(self, order, ann_dir, start, sam=None, prefill_dir=None, pick=False):
         self.order, self.ann_dir, self.i, self.sam = order, ann_dir, start, sam
         self.prefill_dir = prefill_dir
+        self.picker = None
         self.enhance, self.guide, self.use_sam = True, True, sam is not None
         self.drawing, self.points, self.down = False, [], None
         self.confirm_skip = False
@@ -133,6 +141,8 @@ class Annotator:
         cv2.namedWindow(WIN, cv2.WINDOW_AUTOSIZE)
         cv2.setMouseCallback(WIN, self.on_mouse)
         self.load()
+        if pick:
+            self.open_picker()
 
     # ----------------------------------------------------------------- state
     def view_image(self, i, enhance):
@@ -155,7 +165,8 @@ class Annotator:
         self.ann = ann or {"split": split, "name": name,
                            "image_size": [self.img.shape[1], self.img.shape[0]],
                            "skipped": False, "polygons": {}}
-        if ann is None and self.prefill_dir is not None:  # start from the model's prediction
+        # start from the model's prediction (never for test images: the test set is drawn by hand)
+        if ann is None and self.prefill_dir is not None and split != "test":
             p = Path(self.prefill_dir) / f"{split}_{name}.png"
             if p.exists():
                 self.ann["polygons"] = labels_to_polygons(cv2.imread(str(p), cv2.IMREAD_GRAYSCALE))
@@ -184,6 +195,37 @@ class Annotator:
 
     def next_missing(self):
         return next((c for c in CLASSES if len(self.ann["polygons"].get(c, [])) < 3), None)
+
+    # ----------------------------------------------------------- image picker
+    def open_picker(self):
+        from picker import ImagePicker
+        self.save()
+        self.reset_prompt()
+        self.picker = ImagePicker(VIEW + PANEL, VIEW, self.ann_dir, self.order, self.order[self.i])
+
+    def next_todo(self):
+        """Next train/val image (FOCUS order) without a finished annotation, or None.
+
+        Used by n at the end of the list. Test images are not added automatically:
+        they are chosen on purpose in the picker and drawn by hand.
+        """
+        for split in ("train", "val"):
+            for name in list_cases(split):
+                ann = load_annotation(split, name, self.ann_dir)
+                if not (is_complete(ann) or (ann and ann.get("skipped"))):
+                    return split, name
+        return None
+
+    def goto(self, split, name):
+        """Opens an image; if it is not in the list yet it is appended (and the list saved)."""
+        case = [split, name]
+        if case not in self.order:
+            self.order.append(case)
+            (Path(self.ann_dir) / "selection.json").write_text(json.dumps(self.order, indent=1))
+        self.i = self.order.index(case)
+        self.picker = None
+        self.load()
+        self.status_cache = status(self.order, self.ann_dir)
 
     # ------------------------------------------------------------ coordinates
     def to_view(self, pts):
@@ -225,6 +267,14 @@ class Annotator:
 
     # ---------------------------------------------------------------- events
     def on_mouse(self, event, x, y, flags, _):
+        if self.picker is not None:
+            if event == cv2.EVENT_LBUTTONDOWN:
+                chosen = self.picker.click(x, y)
+                if chosen:
+                    self.goto(*chosen)
+            elif event == cv2.EVENT_MOUSEWHEEL:
+                self.picker.turn(-1 if cv2.getMouseWheelDelta(flags) > 0 else 1)
+            return
         if x >= VIEW or y >= VIEW:
             return
         if self.use_sam:
@@ -262,8 +312,12 @@ class Annotator:
             self.cls = self.next_missing() or self.cls
         self.points = []
 
-    def key(self, k):
-        """Returns False to quit."""
+    def key(self, k, raw=None):
+        """Returns False to quit. raw: full waitKeyEx code (arrow keys in the picker)."""
+        if self.picker is not None:
+            if self.picker.key(k if raw is None else raw) == "close":
+                self.picker = None
+            return True
         ch = chr(k) if 0 <= k < 256 else ""
         if ch == "x" and self.ann["polygons"] and not self.confirm_skip:
             self.confirm_skip = True  # never throw away a drawing on a single key press
@@ -302,6 +356,8 @@ class Annotator:
             self.load_keep()
         elif ch == "g":
             self.guide = not self.guide
+        elif ch == "l":
+            self.open_picker()
         elif ch in ("n", "p", "x"):
             if ch == "x":  # the drawing is kept as a backup, z restores it
                 backup = self.ann["polygons"] or self.ann.get("discarded", {})
@@ -311,9 +367,12 @@ class Annotator:
             if 0 <= self.i + step < len(self.order):
                 self.i += step
                 self.load()
-            elif ch != "p":
-                print("end of the list")
-                return False
+            elif ch != "p":  # end of the list: continue with the next image to do, never quit
+                nxt = self.next_todo()
+                if nxt:
+                    self.goto(*nxt)
+                else:
+                    self.open_picker()
         elif k == 27 or ch == "q":
             self.save()
             return False
@@ -333,6 +392,8 @@ class Annotator:
         cv2.waitKey(1)
 
     def render(self):
+        if self.picker is not None:
+            return self.picker.render()
         view = cv2.cvtColor(self.view, cv2.COLOR_GRAY2BGR)
         if self.guide:
             cnt, _ = cv2.findContours(self.heart_view, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
@@ -389,7 +450,8 @@ class Annotator:
         else:
             lines += [("drag / click: draw", grey), ("ENTER / right click: close", grey)]
         lines += [("z undo   c clear", grey), ("e contrast   g heart outline", grey),
-                  ("n next   p previous", grey), ("x not usable   q quit", grey)]
+                  ("n next   p previous", grey), ("l choose image", (0, 255, 255)),
+                  ("x not usable   q quit", grey)]
         if self.ann.get("prefilled"):
             lines.append(("PREFILLED BY THE MODEL:", (0, 200, 255)))
             lines.append(("check / correct every chamber", (0, 200, 255)))
@@ -408,11 +470,11 @@ class Annotator:
     def run(self):
         while True:
             cv2.imshow(WIN, self.render())
-            k = cv2.waitKey(20)
+            k = cv2.waitKeyEx(20)  # full codes, so the arrow keys work in the picker
             if cv2.getWindowProperty(WIN, cv2.WND_PROP_VISIBLE) < 1:
                 self.save()
                 break
-            if k != -1 and not self.key(k & 0xFF):
+            if k != -1 and not self.key(k & 0xFF, k):
                 break
         cv2.destroyAllWindows()
 
@@ -427,6 +489,7 @@ def main():
                     help="append the remaining FOCUS train/val images to the list")
     ap.add_argument("--prefill", nargs="?", const=str(PREFILL_DIR), default=None,
                     help="folder of predicted label maps used as a starting point")
+    ap.add_argument("--pick", action="store_true", help="start on the image picker")
     args = ap.parse_args()
 
     order = selection(args.ann_dir)
@@ -452,7 +515,7 @@ def main():
         start = next((i for i, (s, n) in enumerate(order)
                       if not (is_complete(a := load_annotation(s, n, args.ann_dir))
                               or (a and a.get("skipped")))), len(order) - 1)
-    Annotator(order, args.ann_dir, start, sam, args.prefill).run()
+    Annotator(order, args.ann_dir, start, sam, args.prefill, args.pick).run()
     done, skipped = status(order, args.ann_dir)
     print(f"saved. annotated: train {done['train']}, val {done['val']}, test {done['test']}, "
           f"skipped {skipped}")
