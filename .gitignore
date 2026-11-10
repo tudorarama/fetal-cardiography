@@ -1,0 +1,18 @@
+# Datasets (FOCUS, FETAL_PLANES_DB) - too large for Git, download from Zenodo
+data/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Editors / OS
+.vscode/
+.idea/
+.claude/
+Thumbs.db
+.DS_Store
+
+# Outputs (figures, tables)
+results/
