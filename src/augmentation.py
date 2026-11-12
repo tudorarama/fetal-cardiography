@@ -24,7 +24,8 @@ def augment(image, mask, cfg=None, rng=None):
     mask_has_ch = mask_np.ndim == 3
 
     img_2d = img_np[0].astype(np.float32) if img_has_ch else img_np.astype(np.float32)
-    mask_2d = mask_np[0].astype(np.uint8) if mask_has_ch else mask_np.astype(np.uint8)
+    # every channel of the mask is kept (e.g. heart + thorax), each warped the same way
+    mask_chs = mask_np.astype(np.uint8) if mask_has_ch else mask_np.astype(np.uint8)[np.newaxis]
 
     h, w = img_2d.shape
     max_angle = float(cfg.get("max_angle", 15.0))
@@ -44,26 +45,30 @@ def augment(image, mask, cfg=None, rng=None):
         borderMode=cv2.BORDER_CONSTANT,
         borderValue=bg_val,
     )
-    aug_mask = cv2.warpAffine(
-        mask_2d,
-        matrix,
-        (w, h),
-        flags=cv2.INTER_NEAREST,
-        borderMode=cv2.BORDER_CONSTANT,
-        borderValue=0,
-    )
+    # nearest neighbour keeps the label values (0/1 masks, or classes 0-4 for the chambers)
+    aug_mask = np.stack([
+        cv2.warpAffine(
+            ch,
+            matrix,
+            (w, h),
+            flags=cv2.INTER_NEAREST,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0,
+        )
+        for ch in mask_chs
+    ])
 
     bright = float(cfg.get("brightness", 0.15))
     if bright > 0:
         delta = float(rng.uniform(-bright, bright)) * max(float(aug_img.std()), 1e-3)
         aug_img = (aug_img + delta).astype(np.float32)
 
-    aug_mask = (aug_mask > 0).astype(mask_np.dtype)
+    aug_mask = aug_mask.astype(mask_np.dtype)
+    if not mask_has_ch:
+        aug_mask = aug_mask[0]
 
     if img_has_ch:
         aug_img = aug_img[np.newaxis, ...]
-    if mask_has_ch:
-        aug_mask = aug_mask[np.newaxis, ...]
 
     if is_tensor_img:
         import torch

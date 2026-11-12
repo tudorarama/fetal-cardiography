@@ -45,8 +45,40 @@ def test_augment_supports_torch_tensors():
     assert set(aug_mask.unique().tolist()).issubset({0, 1})
 
 
+def test_augment_keeps_every_mask_channel():
+    """Heart + thorax as a (2, H, W) mask: both channels come out, moved the same way."""
+    rng = np.random.default_rng(3)
+    img = np.zeros((1, 256, 256), dtype=np.float32)
+    mask = np.zeros((2, 256, 256), dtype=np.uint8)
+    cv2.ellipse(mask[0], (128, 128), (30, 20), 0, 0, 360, 1, -1)   # heart
+    cv2.ellipse(mask[1], (128, 128), (80, 70), 0, 0, 360, 1, -1)   # thorax
+
+    cfg = {"p": 1.0, "max_angle": 15.0, "zoom_range": (0.9, 1.1), "brightness": 0.0}
+    _, aug_mask = augment(img, mask, cfg=cfg, rng=rng)
+
+    assert aug_mask.shape == (2, 256, 256)
+    assert aug_mask[0].sum() > 0 and aug_mask[1].sum() > 0
+    assert (aug_mask[0] <= aug_mask[1]).all()  # the heart stays inside the thorax
+
+
+def test_augment_keeps_class_labels():
+    """Label map with classes 0-4 (four chambers): no class is lost or merged."""
+    rng = np.random.default_rng(5)
+    img = np.zeros((256, 256), dtype=np.float32)
+    lab = np.zeros((256, 256), dtype=np.uint8)
+    for k, (x, y) in enumerate([(100, 100), (156, 100), (100, 156), (156, 156)], start=1):
+        cv2.circle(lab, (x, y), 20, k, -1)
+
+    cfg = {"p": 1.0, "max_angle": 15.0, "zoom_range": (0.9, 1.1), "brightness": 0.0}
+    _, aug_lab = augment(img, lab, cfg=cfg, rng=rng)
+
+    assert aug_lab.shape == (256, 256)
+    assert set(np.unique(aug_lab)) == {0, 1, 2, 3, 4}
+
+
 def main():
-    for fn in [test_augment_preserves_shape_dtype_and_binary_mask, test_augment_supports_torch_tensors]:
+    for fn in [test_augment_preserves_shape_dtype_and_binary_mask, test_augment_supports_torch_tensors,
+               test_augment_keeps_every_mask_channel, test_augment_keeps_class_labels]:
         fn()
         print(f"ok  {fn.__name__}")
 
