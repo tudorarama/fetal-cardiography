@@ -1,0 +1,12 @@
+{
+ "split": "train",
+ "name": "016",
+ "image_size": [
+  959,
+  661
+ ],
+ "skipped": true,
+ "polygons": {},
+ "prefilled": true,
+ "discarded": {}
+}
