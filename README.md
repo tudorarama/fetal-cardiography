@@ -38,8 +38,13 @@ Analysis of similar articles / applications / projects from the last 5 years.
 4. **Segmentation Module:**
    - **4a. Classical Segmentation:** Baseline algorithmic approach combining Otsu thresholding for thorax isolation and Chan-Vese active contours for heart region extraction.
    - **4b. Deep Learning Segmentation:** Primary supervised semantic segmentation pipeline utilizing a U-Net convolutional neural network trained on ground-truth masks.
+   - **4c. Chamber Annotation:** Manual delineation of the four chambers (LV, RV, LA, RA) on FOCUS images, assisted by Segment Anything (SAM), with optional landmarks (spine or descending aorta) for the cardiac axis.
+   - **4d. Region of Interest:** Square crop around the heart outline (+20%), resized to 384 × 384, so that the chamber network sees only the heart.
+   - **4e. nnU-Net v2:** Self-configuring 2D network trained from scratch on the chamber annotations; its probabilities are resized back into the full image.
 5. **Post-Processing:** Mask refinement through largest connected component extraction and geometric ellipse fitting to obtain smoothed, geometrically consistent boundaries.
 6. **Segmentation Evaluation:** Quantitative validation comparing predicted segmentation masks against ground-truth annotations using metrics such as the Dice Similarity Coefficient (DSC) and 95th percentile Hausdorff Distance (HD95).
+   - **6b. Chamber Evaluation:** Dice and HD95 per chamber against the hand-drawn annotation of the test images.
 7. **Measurements:** Automated calculation of key clinical biometrics, specifically the Cardiothoracic Ratio (CTR) and the cardiac axis orientation.
-8. **Anomaly Detection:** Rule-based screening mechanism that flags potential congenital cardiac anomalies (e.g., cardiomegaly) whenever the computed CTR exceeds clinical safety thresholds.
-9. **Results & Comparison:** Synthesis of comparative metrics, performance tables, and graphical plots evaluating the classical (Chan-Vese) versus deep learning (U-Net) segmentation approaches.
+   - **7b. Chamber Measurements:** LV/RV and LA/RA area ratios and the cardiac axis (interventricular septum versus the spine–thorax centre line).
+8. **Anomaly Detection:** Rule-based screening mechanism that flags potential congenital cardiac anomalies (e.g., cardiomegaly) whenever the computed CTR exceeds clinical safety thresholds, the chamber ratios fall outside 0.5–2, a chamber is missing or the cardiac axis lies outside 25–65°.
+9. **Results & Comparison:** Synthesis of comparative metrics, performance tables, and graphical plots evaluating the classical (Chan-Vese) versus deep learning (U-Net) segmentation approaches, and the Dice per chamber of the nnU-Net model.
