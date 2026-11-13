@@ -48,3 +48,16 @@ Analysis of similar articles / applications / projects from the last 5 years.
    - **7b. Chamber Measurements:** LV/RV and LA/RA area ratios and the cardiac axis (interventricular septum versus the spine–thorax centre line).
 8. **Anomaly Detection:** Rule-based screening mechanism that flags potential congenital cardiac anomalies (e.g., cardiomegaly) whenever the computed CTR exceeds clinical safety thresholds, the chamber ratios fall outside 0.5–2, a chamber is missing or the cardiac axis lies outside 25–65°.
 9. **Results & Comparison:** Synthesis of comparative metrics, performance tables, and graphical plots evaluating the classical (Chan-Vese) versus deep learning (U-Net) segmentation approaches, and the Dice per chamber of the nnU-Net model.
+## Results
+
+### Preprocessing
+
+Raw FOCUS images, the same images after preprocessing (median filter, bilateral filter, CLAHE) and the ground-truth heart (red) and thorax (green) ellipses (`scripts/demo_preprocessing.py`):
+
+![Preprocessing examples](docs/preprocessing_demo.png)
+
+### Four-chamber segmentation (nnU-Net v2)
+
+The 10 FOCUS test images drawn by hand, the annotation and the nnU-Net v2 prediction (LV red, RV blue, LA yellow, RA green), best images first. Mean Dice 0.72 (LV 0.78, RV 0.73, LA 0.65, RA 0.71); details in [four_chambers/README.md](four_chambers/README.md). On the last image (test_022) both atria are missed.
+
+![Four-chamber segmentation on the test images](docs/four_chambers_examples.png)
