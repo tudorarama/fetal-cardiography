@@ -48,6 +48,36 @@ Analysis of similar articles / applications / projects from the last 5 years.
    - **7b. Chamber Measurements:** LV/RV and LA/RA area ratios and the cardiac axis (interventricular septum versus the spine–thorax centre line).
 8. **Anomaly Detection:** Rule-based screening mechanism that flags potential congenital cardiac anomalies (e.g., cardiomegaly) whenever the computed CTR exceeds clinical safety thresholds, the chamber ratios fall outside 0.5–2, a chamber is missing or the cardiac axis lies outside 25–65°.
 9. **Results & Comparison:** Synthesis of comparative metrics, performance tables, and graphical plots evaluating the classical (Chan-Vese) versus deep learning (U-Net) segmentation approaches, and the Dice per chamber of the nnU-Net model.
+## Running the four-chamber model (nnU-Net v2)
+
+The code is in `four_chambers/`; run every command from that folder (Windows, Python 3.14, NVIDIA GPU).
+
+**1. Environment** (PyTorch with CUDA 12.6, nnU-Net 2.8.1):
+
+```
+cd four_chambers
+py -3.14 -m venv .venv
+.venv\Scripts\python.exe -m pip install torch==2.14.1 torchvision --index-url https://download.pytorch.org/whl/cu126
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+**2. Data:** the FOCUS dataset in `data/FOCUS/` at the repository root (see `scripts/check_data.py`).
+
+**3. Trained model:** download `nnunet_four_chambers.zip` from the GitHub Release [four-chambers-v1](https://github.com/tudorarama/fetal-cardiography/releases/tag/four-chambers-v1) and unzip it in `four_chambers/` (it creates `nnunet/results/...` and `nnunet/last_trainer.txt`).
+
+**4. Segment and evaluate the test images:**
+
+```
+.venv\Scripts\python.exe predict.py     # label maps -> nnunet/predictions/test/
+.venv\Scripts\python.exe evaluate.py    # Dice, HD95, chamber ratios, axis -> results/
+```
+
+**Training again** (instead of step 3; about 30 min for 200 epochs on a 6 GB GTX 1660 SUPER):
+
+```
+.venv\Scripts\python.exe train.py --epochs 200
+```
+
 ## Results
 
 ### Preprocessing
@@ -58,6 +88,6 @@ Raw FOCUS images, the same images after preprocessing (median filter, bilateral 
 
 ### Four-chamber segmentation (nnU-Net v2)
 
-The 10 FOCUS test images drawn by hand, the annotation and the nnU-Net v2 prediction (LV red, RV blue, LA yellow, RA green), best images first. Mean Dice 0.72 (LV 0.78, RV 0.73, LA 0.65, RA 0.71); details in [four_chambers/README.md](four_chambers/README.md). On the last image (test_022) both atria are missed.
+The 10 FOCUS test images drawn by hand, the annotation and the nnU-Net v2 prediction (LV red, RV blue, LA yellow, RA green), best images first. Mean Dice 0.72 (LV 0.78, RV 0.73, LA 0.65, RA 0.71). On the last image (test_022) both atria are missed.
 
 ![Four-chamber segmentation on the test images](docs/four_chambers_examples.png)

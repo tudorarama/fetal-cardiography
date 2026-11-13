@@ -14,7 +14,7 @@ Output: nnunet/raw/Dataset501_FetalHeart4CH/
 
 Region of interest: a square around the heart outline (common.heart_roi_box),
 resized to 384 x 384. The chambers are all inside the heart; the full 959 x 661
-image made one epoch take ~14 minutes on the GTX 1660 (see README).
+image made one epoch take ~14 minutes on the GTX 1660.
 
 The folder is regenerated from annotations/ every time (it is derived data).
 nnU-Net normally makes a 5-fold cross-validation; here fold 0 follows the
