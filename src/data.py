@@ -13,9 +13,11 @@ FOCUS layout (data/FOCUS/):
 FETAL_PLANES_DB layout (data/ZENODO/):
     Images/*.png
     FETAL_PLANES_DB_data.csv   ';'-separated, column "Train" = official split (1 = train)
-    Only the 1,718 "Fetal thorax" images (the heart planes) are kept; the other
-    10,682 (brain, abdomen, femur, cervix, other) were deleted. The full metadata
-    is in FETAL_PLANES_DB_data_original.csv/.xlsx (re-download: Zenodo 3904280).
+    The project uses 485 "Fetal thorax" images (heart plane), one per patient:
+    348 train, 87 validation, 50 test (four_chambers/planes_split.json). They
+    were chosen from the 1,718 thorax images of the full dataset (12,400 images,
+    Zenodo 3904280): patients have several near-identical images, and images
+    where the heart was not found well were left out.
 """
 from pathlib import Path
 

@@ -44,8 +44,10 @@ The test images are only ever drawn by hand and are never used for training.
 ### Second source: FETAL_PLANES_DB
 
 FOCUS comes from a single machine. To have more images and other machines
-(Voluson E6 / S10, Aloka), images of FETAL_PLANES_DB (Zenodo 3904280, 1,718
-"fetal thorax" images of 755 patients) are added. They have no labels at all:
+(Voluson E6 / S10, Aloka), **485 images of FETAL_PLANES_DB** (Zenodo 3904280)
+are added. They are chosen from its 1,718 "fetal thorax" images of 755
+patients: one image per patient (the images of a patient are nearly identical)
+and only where the heart was found well. They have no labels at all:
 
 1. `../scripts/segment_planes.py` runs the heart/thorax U-Net of the first
    project on all of them (CPU, about 3 minutes) and saves the masks next to
