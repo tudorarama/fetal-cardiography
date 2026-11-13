@@ -16,3 +16,12 @@ Thumbs.db
 
 # Outputs (figures, tables)
 results/
+
+# Four chambers: generated nnU-Net data and the trained model (see the GitHub Release)
+four_chambers/nnunet/
+four_chambers/annotations_backup/
+*.log
+*.pth
+
+# SAM weights (~360 MB): see four_chambers/sam_assist.py for the download link
+models/
