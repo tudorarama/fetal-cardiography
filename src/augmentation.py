@@ -7,7 +7,7 @@ from src.config import AUGMENT
 
 
 def augment(image, mask, cfg=None, rng=None):
-    """Apply random small rotation, zoom, and brightness shift to a training pair."""
+    """Apply random mirror, small rotation, zoom, shift and brightness change to a training pair."""
     cfg = AUGMENT if cfg is None else cfg
     rng = np.random.default_rng() if rng is None else rng
 
@@ -35,6 +35,13 @@ def augment(image, mask, cfg=None, rng=None):
     scale = float(rng.uniform(z_min, z_max))
 
     matrix = cv2.getRotationMatrix2D((w / 2.0, h / 2.0), angle, scale)
+    shift = float(cfg.get("shift", 0.0))
+    if shift > 0:
+        matrix[0, 2] += float(rng.uniform(-shift, shift)) * w
+        matrix[1, 2] += float(rng.uniform(-shift, shift)) * h
+    if rng.random() < cfg.get("flip", 0.0):  # left-right mirror, same for image and mask
+        img_2d = img_2d[:, ::-1].copy()
+        mask_chs = mask_chs[:, :, ::-1].copy()
     bg_val = float(img_2d.min())
 
     aug_img = cv2.warpAffine(

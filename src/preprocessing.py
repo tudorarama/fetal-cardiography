@@ -71,15 +71,19 @@ def mask_to_unet(mask, size=UNET_SIZE):
     return (padded > 0).astype(np.uint8)
 
 
-def restore_size(mask, meta):
-    """Remove letterbox padding and resize a mask back to its original shape."""
+def restore_size(mask, meta, interp=cv2.INTER_NEAREST):
+    """Remove letterbox padding and resize a mask back to its original shape.
+
+    With the default nearest-neighbour interpolation the result is a uint8 label
+    mask; with cv2.INTER_LINEAR a float probability map can be restored as well.
+    """
     top, bottom, left, right = meta["pad"]
     orig_h, orig_w = meta["orig_shape"]
     h, w = mask.shape[:2]
     unpadded = mask[top : h - bottom, left : w - right]
-    return cv2.resize(
-        unpadded.astype(np.uint8), (orig_w, orig_h), interpolation=cv2.INTER_NEAREST
-    )
+    if interp == cv2.INTER_NEAREST:
+        unpadded = unpadded.astype(np.uint8)
+    return cv2.resize(unpadded, (orig_w, orig_h), interpolation=interp)
 
 
 def crop_heart_roi(img, heart_mask, margin=0.25):

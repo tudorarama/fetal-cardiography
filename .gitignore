@@ -23,5 +23,7 @@ four_chambers/annotations_backup/
 *.log
 *.pth
 
-# SAM weights (~360 MB): see four_chambers/sam_assist.py for the download link
-models/
+# models/: the small trained U-Nets (~6 MB each) and tuned parameters are versioned;
+# the SAM weights (~360 MB, see four_chambers/sam_assist.py) are not
+!models/unet_*.pth
+models/sam_*.pth

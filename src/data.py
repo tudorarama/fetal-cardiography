@@ -19,14 +19,13 @@ FETAL_PLANES_DB layout (data/ZENODO/):
     Zenodo 3904280): patients have several near-identical images, and images
     where the heart was not found well were left out.
 """
-from pathlib import Path
-
 import cv2
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
-FOCUS_DIR = ROOT / "data" / "FOCUS"
-PLANES_DIR = ROOT / "data" / "ZENODO"
+from src.config import DATA_DIR
+
+FOCUS_DIR = DATA_DIR / "FOCUS"
+PLANES_DIR = DATA_DIR / "ZENODO"
 
 SPLITS = {"train": "training", "val": "validation", "test": "testing"}
 STRUCTURES = ("cardiac", "thorax")

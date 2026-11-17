@@ -1,4 +1,10 @@
-"""Shared project constants."""
+"""Shared project constants: paths, preprocessing and augmentation settings."""
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR = ROOT / "data"          # datasets (not versioned)
+MODELS_DIR = ROOT / "models"      # trained U-Nets and tuned parameters (versioned)
+RESULTS_DIR = ROOT / "results"    # tables and figures written by the scripts (not versioned)
 
 SEED = 42
 
@@ -26,4 +32,6 @@ AUGMENT = {
     "max_angle": 15.0,
     "zoom_range": (0.9, 1.1),
     "brightness": 0.15,
+    "flip": 0.5,      # left-right mirror (an upside-down sector never occurs)
+    "shift": 0.08,    # random translation, as a fraction of the image side
 }
