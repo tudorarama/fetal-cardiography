@@ -48,6 +48,70 @@ Analysis of similar articles / applications / projects from the last 5 years.
    - **7b. Chamber Measurements:** LV/RV and LA/RA area ratios and the cardiac axis (interventricular septum versus the spine–thorax centre line).
 8. **Anomaly Detection:** Rule-based screening mechanism that flags potential congenital cardiac anomalies (e.g., cardiomegaly) whenever the computed CTR exceeds clinical safety thresholds, the chamber ratios fall outside 0.5–2, a chamber is missing or the cardiac axis lies outside 25–65°.
 9. **Results & Comparison:** Synthesis of comparative metrics, performance tables, and graphical plots evaluating the classical (Chan-Vese) versus deep learning (U-Net) segmentation approaches, and the Dice per chamber of the nnU-Net model.
+
+## Project structure
+
+The numbers refer to the components of the architecture above.
+
+```
+src/                    shared library (functions only, no entry points)
+  config.py             paths, preprocessing and augmentation settings
+  data.py               FOCUS / FETAL_PLANES_DB loading, ellipse -> mask         (1, 2)
+  preprocessing.py      median + bilateral + CLAHE, letterbox, z-score           (3)
+  augmentation.py       random rotation, zoom, shift, flip, brightness           (3)
+  classical.py          Otsu thorax + Chan-Vese heart                            (4a)
+  unet.py               MONAI U-Net: model, training dataset, predictor          (4b)
+  postprocess.py        largest component, hole filling, ellipse fit             (5)
+  metrics.py            Dice, HD95                                               (6)
+  evaluation.py         runs any predictor on a split and scores it              (6)
+  measurements.py       CTR and cardiac axis from the ellipses                   (7)
+  anomaly.py            rule-based flags (CTR > 0.35, ...)                       (8)
+  synthetic.py          synthetic cardiomegaly (enlarged hearts) for testing     (8)
+scripts/                entry points, in the order they are run
+  check_data.py, inspect_data.py              datasets present and readable
+  demo_preprocessing.py, demo_roi.py          preprocessing figures
+  preprocess_dataset.py, verify_processed.py  cached preprocessed tensors
+  validate_pipeline.py                        sanity check of the metrics on the ground truth
+  tune_classical.py, evaluate_classical.py    classical method (4a)
+  train_unet.py, evaluate_unet.py             U-Net (4b) and comparison (9)
+  evaluate_anomaly.py                         cardiomegaly rule on real and synthetic images (8)
+  segment_planes.py                           heart outline of FETAL_PLANES_DB, used by four_chambers/
+four_chambers/          stage 2: chamber annotation and nnU-Net v2 (4c-4e, 6b, 7b), own environment
+models/                 trained U-Nets (unet_*.pth, ~6 MB each) and tuned parameters (versioned)
+tests/                  unit tests
+docs/                   architecture diagram and README figures
+data/                   datasets (not versioned)
+results/                tables, figures and logs written by the scripts (not versioned)
+```
+
+## Running the heart and thorax segmentation (stage 1)
+
+Run every command from the repository root (Python 3.14, CPU is enough).
+
+```
+py -3.14 -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe scripts/check_data.py           # FOCUS in data/FOCUS/
+```
+
+The trained U-Nets and the classical parameters are already in `models/`, so the evaluation runs directly:
+
+```
+.venv\Scripts\python.exe scripts/evaluate_classical.py   # classical method -> results/classical_test*
+.venv\Scripts\python.exe scripts/evaluate_unet.py        # U-Nets vs classical -> results/comparison_test_dice.png
+.venv\Scripts\python.exe scripts/evaluate_anomaly.py     # CTR > 0.35 rule on real and synthetic cardiomegaly
+.venv\Scripts\python.exe -m pytest tests                 # unit tests
+```
+
+Training again (about 28 min per U-Net on CPU, 100 epochs):
+
+```
+.venv\Scripts\python.exe scripts/tune_classical.py                # -> models/classical_params.json
+.venv\Scripts\python.exe scripts/train_unet.py                    # -> models/unet_pre.pth (with preprocessing filters)
+.venv\Scripts\python.exe scripts/train_unet.py --no-preprocess    # -> models/unet_raw.pth (ablation)
+.venv\Scripts\python.exe scripts/train_unet.py --heart-size-aug   # -> models/unet_pre_cm.pth (random heart size)
+```
+
 ## Running the four-chamber model (nnU-Net v2)
 
 The code is in `four_chambers/`; run every command from that folder (Windows, Python 3.14, NVIDIA GPU).
@@ -85,6 +149,32 @@ py -3.14 -m venv .venv
 Raw FOCUS images, the same images after preprocessing (median filter, bilateral filter, CLAHE) and the ground-truth heart (red) and thorax (green) ellipses (`scripts/demo_preprocessing.py`):
 
 ![Preprocessing examples](docs/preprocessing_demo.png)
+
+### Heart and thorax segmentation
+
+50 FOCUS test images, mean over images (`scripts/evaluate_classical.py`, `scripts/evaluate_unet.py`). "Prior" is a trivial baseline: fixed circles at the mean training position.
+
+| Method | Dice heart | Dice thorax | HD95 heart (px) | HD95 thorax (px) | CTR error |
+|---|---|---|---|---|---|
+| Prior (fixed circles) | 0.51 | 0.74 | 110.9 | 111.6 | 0.028 |
+| Classical (Otsu + Chan-Vese) | 0.68 | 0.82 | 101.8 | 96.8 | 0.092 |
+| U-Net, with preprocessing filters | **0.92** | **0.97** | **17.3** | **16.5** | **0.026** |
+| U-Net, without filters | 0.92 | 0.96 | 18.7 | 17.2 | 0.029 |
+| U-Net, random heart size | 0.91 | 0.96 | 18.8 | 17.5 | 0.028 |
+
+Per image, the U-Net beats the classical method by a wide margin (Wilcoxon signed-rank, p < 1e-12). With or without the preprocessing filters, the U-Net Dice differs by less than 0.01. For comparison, Zhang et al. (2025) report 0.89 / 0.94 for U-Net on FOCUS.
+
+### Cardiomegaly screening (CTR > 0.35)
+
+FOCUS contains no enlarged hearts (ground-truth CTR 0.15–0.36), so the rule is tested on synthetic cardiomegaly. In each test image, the heart is enlarged 1.0–1.4× inside the thorax (`src/synthetic.py`, `scripts/evaluate_anomaly.py`).
+
+| U-Net | Sensitivity | Specificity | AUC |
+|---|---|---|---|
+| with preprocessing filters | 0.24 | 0.99 | 0.92 |
+| without filters | 0.25 | 0.98 | 0.90 |
+| random heart size | **0.69** | 0.95 | **0.95** |
+
+U-Nets trained only on normal hearts underestimate the size of enlarged hearts. Varying the heart size during training removes most of that bias. On the 50 real test images, the U-Nets raise at most 1 false alarm, while the classical method raises 13.
 
 ### Four-chamber segmentation (nnU-Net v2)
 
