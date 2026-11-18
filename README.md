@@ -67,6 +67,7 @@ src/                    shared library (functions only, no entry points)
   measurements.py       CTR and cardiac axis from the ellipses                   (7)
   anomaly.py            rule-based flags (CTR > 0.35, ...)                       (8)
   synthetic.py          synthetic cardiomegaly (enlarged hearts) for testing     (8)
+  outline.py            U-Net heart/thorax outline + quality checks on unlabelled images
 scripts/                entry points, in the order they are run
   check_data.py, inspect_data.py              datasets present and readable
   demo_preprocessing.py, demo_roi.py          preprocessing figures
@@ -76,6 +77,7 @@ scripts/                entry points, in the order they are run
   train_unet.py, evaluate_unet.py             U-Net (4b) and comparison (9)
   evaluate_anomaly.py                         cardiomegaly rule on real and synthetic images (8)
   segment_planes.py                           heart outline of FETAL_PLANES_DB, used by four_chambers/
+  segment_heartbeat.py, evaluate_heartbeat.py anomaly rules on real CHD cases (Heartbeat, 8)
 four_chambers/          stage 2: chamber annotation and nnU-Net v2 (4c-4e, 6b, 7b), own environment
 models/                 trained U-Nets (unet_*.pth, ~6 MB each) and tuned parameters (versioned)
 tests/                  unit tests
@@ -142,6 +144,18 @@ py -3.14 -m venv .venv
 .venv\Scripts\python.exe train.py --epochs 200
 ```
 
+## Testing the anomaly rules on real CHD cases (Heartbeat)
+
+Heartbeat is a restricted-access dataset of fetal echocardiography (patients with and without congenital heart disease, CHD). It was obtained from its authors and **may not be redistributed**: the images, the masks predicted on them and any figure showing them stay local (`data/`, `results/` and `four_chambers/nnunet/` are not versioned). Only the code and aggregated numbers are in the repository. Anyone who wants to run this must request access from the authors and unpack the dataset into `data/HEARTBEAT/` (`2T/`, `3T/`).
+
+```
+.venv\Scripts\python.exe scripts/segment_heartbeat.py              # 1. heart outline (crop) and CTR, stage-1 U-Nets, CPU ~15 min
+cd four_chambers
+.venv\Scripts\python.exe predict_heartbeat.py                      # 2. chambers with nnU-Net v2 + measurements, GPU ~15 min
+cd ..
+.venv\Scripts\python.exe scripts/evaluate_heartbeat.py             # 3. rules vs the CHD label -> results/heartbeat_*.csv
+```
+
 ## Results
 
 ### Preprocessing
@@ -175,6 +189,42 @@ FOCUS contains no enlarged hearts (ground-truth CTR 0.15–0.36), so the rule is
 | random heart size | **0.69** | 0.95 | **0.95** |
 
 U-Nets trained only on normal hearts underestimate the size of enlarged hearts. Varying the heart size during training removes most of that bias. On the 50 real test images, the U-Nets raise at most 1 false alarm, while the classical method raises 13.
+
+### Anomaly rules on real CHD cases (Heartbeat)
+
+These are the 4C images of Heartbeat: 3,283 images from 1,314 exams, 91 of them CHD. An exam is one patient in one trimester. Heartbeat gives only a CHD / No_CHD label per patient, without the type of defect and without outlines (`scripts/evaluate_heartbeat.py`).
+
+- **Which images are used.** Colour Doppler images (3%) are excluded. CTR is measured where the U-Net finds both the heart and the whole thorax (80% of images). Chambers are measured only where the nnU-Net segmentation is plausible (35% of images): each chamber is one piece, and each ventricle is next to its own atrium. On these images from other machines, nnU-Net often fails, and a failed segmentation would look like an anomaly. Usable images are about as common in CHD as in No_CHD exams.
+- **How an exam is flagged.** An exam is flagged when a rule flags the majority of its usable images.
+
+| Rule (fixed threshold) | Sensitivity (CHD flagged) | Specificity (No_CHD not flagged) |
+|---|---|---|
+| Cardiomegaly, CTR > 0.35 | 0.16 | 0.90 |
+| Missing chamber (< 3% of the chambers' area) | 0.00 | 0.98 |
+| Ventricle disproportion, LV/RV outside 0.5–2 | 0.00 | 0.98 |
+| Atrium disproportion, LA/RA outside 0.5–2 | 0.05 | 0.86 |
+| Any rule | 0.19 | 0.81 |
+
+How well each measurement alone separates CHD from No_CHD, at any threshold (exam median):
+
+| Measurement | AUC | p (Mann-Whitney) |
+|---|---|---|
+| CTR | 0.61 | 0.001 |
+| \|log LV/RV\| | 0.56 | 0.13 |
+| \|log LA/RA\| | 0.50 | 0.92 |
+| Smallest chamber fraction | 0.48 | 0.53 |
+
+**What this shows:**
+
+- **The rules catch few CHD cases.** Only the CTR differs significantly between the two groups, and the difference is small (median 0.29 compared with 0.27).
+- **Why the chamber rules fail:**
+  - Many CHD types look normal in the four-chamber view, for example defects of the great arteries. The literature estimates that the 4C view alone detects about half of CHD.
+  - The defect type is unknown, so the cases that could show a disproportion cannot be singled out.
+  - nnU-Net was trained on 113 images from a single machine. On Heartbeat its segmentation is plausible on only a third of the images, and even then the chamber ratios are noisy.
+- **What would help:**
+  - annotate a few Heartbeat images to measure the Dice there;
+  - fine-tune nnU-Net on them;
+  - use more views (3VT, LVOT, RVOT).
 
 ### Four-chamber segmentation (nnU-Net v2)
 
