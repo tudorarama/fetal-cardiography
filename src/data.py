@@ -1,4 +1,4 @@
-"""Loading the FOCUS and FETAL_PLANES_DB datasets.
+"""Loading the FOCUS, FETAL_PLANES_DB and Heartbeat datasets.
 
 FOCUS layout (data/FOCUS/):
     training/ (200)   validation/ (50)   testing/ (50)
@@ -18,6 +18,13 @@ FETAL_PLANES_DB layout (data/ZENODO/):
     were chosen from the 1,718 thorax images of the full dataset (12,400 images,
     Zenodo 3904280): patients have several near-identical images, and images
     where the heart was not found well were left out.
+
+Heartbeat layout (data/HEARTBEAT/, restricted access, never versioned or shared):
+    2T/{cross_val,test}/, 3T/cross_val/     second / third trimester
+        {CHD,No_CHD}/<patient>/<patient>.<view>.<nn>.png   views 3VT, 4C, LVOT, RVOT
+        metadata_raw.csv     image, patient_code, class, view and 4 clinical fields
+    Only a CHD / No_CHD label per patient, no outlines: used as an external test
+    set for the anomaly rules (scripts/segment_heartbeat.py, evaluate_heartbeat.py).
 """
 import cv2
 import numpy as np
@@ -26,6 +33,8 @@ from src.config import DATA_DIR
 
 FOCUS_DIR = DATA_DIR / "FOCUS"
 PLANES_DIR = DATA_DIR / "ZENODO"
+HEARTBEAT_DIR = DATA_DIR / "HEARTBEAT"
+HEARTBEAT_PARTS = (("2T", "cross_val"), ("2T", "test"), ("3T", "cross_val"))
 
 SPLITS = {"train": "training", "val": "validation", "test": "testing"}
 STRUCTURES = ("cardiac", "thorax")
@@ -116,3 +125,29 @@ def load_planes_table():
     df["Train"] = df["Train"].astype(int)
     df["image_path"] = [PLANES_DIR / "Images" / f"{n}.png" for n in df["Image_name"]]
     return df
+
+
+# --------------------------------------------------------------------- Heartbeat
+
+def load_heartbeat_table(view="4C"):
+    """One row per Heartbeat image of a view.
+
+    Columns: id (unique, e.g. '2T_P0163.4C.01'), image_path, patient, trimester,
+    part ('cross_val' / 'test'), exam ('2T_P0163': one patient in one trimester;
+    296 patients were scanned in both), chd (1 = CHD), and the clinical fields.
+    """
+    import pandas as pd
+
+    tables = []
+    for trimester, part in HEARTBEAT_PARTS:
+        d = HEARTBEAT_DIR / trimester / part
+        df = pd.read_csv(d / "metadata_raw.csv")
+        df = df[df["view"] == view].copy()
+        df["image_path"] = [d / p for p in df["image"]]
+        df["trimester"], df["part"] = trimester, part
+        tables.append(df)
+    df = pd.concat(tables, ignore_index=True).rename(columns={"patient_code": "patient"})
+    df["id"] = df["trimester"] + "_" + df["image_path"].map(lambda p: p.stem)
+    df["exam"] = df["trimester"] + "_" + df["patient"]
+    df["chd"] = (df["class"] == "CHD").astype(int)
+    return df.drop(columns=["image", "class"])
