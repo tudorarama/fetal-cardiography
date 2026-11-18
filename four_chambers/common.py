@@ -160,7 +160,12 @@ def heart_roi_box(split, name, margin=ROI_MARGIN):
     FOCUS provides the heart outline for every image (train, val and test); for
     FETAL_PLANES_DB it comes from the stage-1 U-Net, in training and at prediction alike.
     """
-    ys, xs = np.nonzero(load_focus_masks(split, name)["cardiac"])
+    return roi_box(load_focus_masks(split, name)["cardiac"], margin)
+
+
+def roi_box(heart_mask, margin=ROI_MARGIN):
+    """Square box (x0, y0, side) around a heart mask, enlarged by margin on each side."""
+    ys, xs = np.nonzero(heart_mask)
     x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max()
     side = int(round(max(x1 - x0, y1 - y0) * (1 + 2 * margin)))
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2

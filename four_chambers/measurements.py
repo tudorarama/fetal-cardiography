@@ -102,6 +102,30 @@ def chamber_measurements(lab, landmark_xy=None, thorax_center=None):
             "axis": cardiac_axis(lab, landmark_xy, thorax_center)}
 
 
+def segmentation_quality(lab):
+    """Plausibility of a predicted label map, without any annotation (external images).
+
+    solidity  smallest share of a chamber's area in its largest piece (1 = every
+              chamber is one blob; a chamber split into pieces is a failed segmentation)
+    layout_ok each ventricle lies closer to its own atrium than to the other one
+              (LV next to LA, RV next to RA), as in every four-chamber view
+    """
+    shares, centres = [], {}
+    for c in CHAMBERS:
+        m = (lab == LABELS[c]).astype(np.uint8)
+        if not m.any():
+            continue
+        n, comp, stats, cent = cv2.connectedComponentsWithStats(m, 8)
+        big = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+        shares.append(stats[big, cv2.CC_STAT_AREA] / m.sum())
+        centres[c] = cent[big]
+    layout_ok = None
+    if len(centres) == 4:
+        d = lambda a, b: float(np.hypot(*(centres[a] - centres[b])))
+        layout_ok = d("LV", "LA") < d("LV", "RA") and d("RV", "RA") < d("RV", "LA")
+    return {"solidity": float(min(shares)) if shares else 0.0, "layout_ok": layout_ok}
+
+
 def screen(m):
     """Anomaly flags (list of codes) from chamber_measurements(); empty list = no flag."""
     flags = []
