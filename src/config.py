@@ -4,8 +4,8 @@ SEED = 42
 
 UNET_SIZE = 256
 
-NORM_MEAN = 45.26
-NORM_STD = 48.37
+NORM_MEAN = 47.00
+NORM_STD = 61.41
 
 PREPROC = {
     "crop": False,
