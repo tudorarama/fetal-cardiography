@@ -17,7 +17,7 @@ import torch
 from monai.networks.nets import UNet
 
 from src.augmentation import augment
-from src.config import MODELS_DIR, PREPROC, UNET_SIZE
+from src.config import MODELS_DIR, NORM_MEAN, NORM_STD, PREPROC, UNET_SIZE
 from src.data import STRUCTURES, list_cases, load_case
 from src.postprocess import refine
 from src.preprocessing import mask_to_unet, prepare, restore_size
@@ -30,8 +30,13 @@ def build_model():
 
 
 def preproc_config(use_filters=True):
-    """Preprocessing settings; use_filters=False is the 'no preprocessing' ablation."""
-    return {**PREPROC, "filter": use_filters}
+    """Preprocessing settings; use_filters=False is the 'no preprocessing' ablation.
+
+    The z-score statistics are written into the settings (and so into the checkpoint):
+    a trained network keeps the normalization it was trained with even if
+    NORM_MEAN / NORM_STD in src/config.py are recomputed later.
+    """
+    return {**PREPROC, "filter": use_filters, "mean": NORM_MEAN, "std": NORM_STD}
 
 
 def checkpoint_path(name):
