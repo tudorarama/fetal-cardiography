@@ -39,17 +39,11 @@ from tqdm import tqdm
 
 from src.config import DATA_DIR, RESULTS_DIR as OUT
 from src.data import STRUCTURES, load_heartbeat_table
-from src.outline import analyse, draw, heart_found, predict_probs, verdict
+from src.outline import (DOPPLER_FRACTION, analyse, colour_fraction, draw, heart_found,
+                         predict_probs, verdict)
 from src.unet import checkpoint_path, load_model
 
 MASK_DIR = DATA_DIR / "HEARTBEAT_masks"
-DOPPLER_FRACTION = 0.01
-
-
-def colour_fraction(bgr):
-    """Share of clearly coloured pixels (colour Doppler); B-mode images are grey."""
-    b, g, r = (bgr[..., i].astype(np.int16) for i in range(3))
-    return float(((np.abs(b - g) + np.abs(g - r)) > 40).mean())
 
 
 def main():
