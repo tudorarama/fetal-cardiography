@@ -35,6 +35,16 @@ AXIS_RANGE = (25.0, 65.0)
 RATIO_RANGE = (0.5, 2.0)
 MIN_CHAMBER_FRACTION = 0.03
 
+# A predicted chamber segmentation is only measured when it is plausible
+# (images without annotation, see four_chambers/measurements.segmentation_quality):
+MIN_COVERAGE = 0.25   # chambers cover < 25 % of the heart outline: not a usable 4C view
+MIN_SOLIDITY = 0.9    # a chamber split into pieces: failed segmentation (FOCUS test: >= 0.99)
+
+
+def chambers_plausible(coverage, solidity, layout_ok):
+    """True when the chamber measurements of a prediction can be trusted."""
+    return coverage >= MIN_COVERAGE and solidity >= MIN_SOLIDITY and layout_ok is not False
+
 
 @dataclass
 class Finding:

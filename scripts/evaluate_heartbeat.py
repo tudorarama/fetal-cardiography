@@ -43,12 +43,10 @@ import numpy as np
 import pandas as pd
 from scipy.stats import mannwhitneyu
 
-from src.anomaly import CTR_LIMIT, MIN_CHAMBER_FRACTION, RATIO_RANGE
+from src.anomaly import CTR_LIMIT, MIN_CHAMBER_FRACTION, MIN_COVERAGE, MIN_SOLIDITY, RATIO_RANGE
 from src.config import RESULTS_DIR as OUT
 
 CHAMBERS = ("LV", "RV", "LA", "RA")
-MIN_COVERAGE = 0.25    # chambers cover < 25 % of the heart outline: not a usable 4C view
-MIN_SOLIDITY = 0.9     # a chamber split into pieces: failed segmentation (FOCUS test: >= 0.99)
 
 # measurement per image -> (exam score: higher = more abnormal, label)
 SCORES = {

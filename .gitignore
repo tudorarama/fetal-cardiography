@@ -27,3 +27,6 @@ four_chambers/annotations_backup/
 # the SAM weights (~360 MB, see four_chambers/sam_assist.py) are not
 !models/unet_*.pth
 models/sam_*.pth
+
+# Gradio demo cache (uploaded images)
+.gradio/

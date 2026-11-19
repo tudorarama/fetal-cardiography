@@ -105,6 +105,7 @@ scripts/                entry points, in the order they are run
   segment_planes.py                           heart outline of FETAL_PLANES_DB (4b -> 4d)
   segment_heartbeat.py, evaluate_heartbeat.py anomaly rules on real CHD cases (Heartbeat, 9)
 four_chambers/          stage 2: chamber annotation and nnU-Net v2 (4c-4e, 7), own environment
+app/                    the whole method on one image: pipeline, command line, browser demo
 models/                 trained U-Nets (unet_*.pth, ~6 MB each) and tuned parameters (versioned)
 tests/                  unit tests
 docs/                   architecture diagram and README figures
@@ -176,6 +177,22 @@ py -3.14 -m venv .venv
 ```
 .venv\Scripts\python.exe train.py --epochs 200
 ```
+
+## Demo: the whole method on one image
+
+`app/` chains every step on a single image: heart and thorax (U-Net), CTR, square crop around the heart, four chambers (nnU-Net v2), plausibility checks, measurements and anomaly flags. Every step can refuse the image instead of guessing, and says why: colour Doppler, heart not found clearly, heart and thorax not usable together, or an implausible chamber segmentation. The models are loaded once; an image takes about 0.5 s on the GPU.
+
+It runs in the `four_chambers` environment (it needs nnU-Net and the trained model, see above); started with any other Python it switches to that environment itself. From the repository root:
+
+```
+python -m app.demo                                  # browser page on http://127.0.0.1:7860
+python -m app.analyse data\FOCUS\testing\images\001.png   # text report
+python -m app.analyse <images...> --out results\demo     # + figure and JSON per image
+```
+
+The page offers examples from FOCUS and FETAL_PLANES_DB on which the method works clearly; other images can be uploaded (do not share the page while restricted Heartbeat images are on it). A flag is a reason for a specialist to look again, never a diagnosis.
+
+[Demo video](docs/demo.mp4) (3.5 min, subtitles in Romanian): the examples, then images uploaded from the computer.
 
 ## Testing the anomaly rules on real CHD cases (Heartbeat)
 

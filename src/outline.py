@@ -19,6 +19,13 @@ from src.postprocess import fill_holes, fit_ellipse, largest_component
 from src.preprocessing import prepare, restore_size
 
 LIMITS = {"conf": 0.75, "fit": 0.85, "inside": 0.95, "thorax_cut": 0.10, "ctr": (0.15, 0.55)}
+DOPPLER_FRACTION = 0.01  # more coloured pixels than this: colour Doppler (the U-Nets saw only B-mode)
+
+
+def colour_fraction(bgr):
+    """Share of clearly coloured pixels (colour Doppler); B-mode images are grey."""
+    b, g, r = (bgr[..., i].astype(np.int16) for i in range(3))
+    return float(((np.abs(b - g) + np.abs(g - r)) > 40).mean())
 
 
 @torch.no_grad()
