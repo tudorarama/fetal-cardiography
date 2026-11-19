@@ -6,12 +6,11 @@ Run from the project root (any Python: it switches to four_chambers/.venv itself
 
 Upload a four-chamber image or pick an example. The page shows the heart and
 thorax outlines, the four chambers, the measurements and the anomaly flags, and
-says which step refused the image when it is not usable. Heartbeat examples are
-listed only when data/HEARTBEAT/ is present (restricted data: never share the page
-publicly while they are loaded).
+says which step refused the image when it is not usable. The examples are public
+images (FOCUS, FETAL_PLANES_DB) on which the method works well; Heartbeat images can
+be uploaded, but the page must then not be shared (restricted data).
 """
 import argparse
-import random
 import sys
 from pathlib import Path
 
@@ -37,18 +36,22 @@ EXPLAIN = {
 }
 
 
-def examples(n=4, seed=0):
-    """A few images of each source present on this computer: (path, label)."""
-    rng = random.Random(seed)
-    out = []
-    focus = sorted((DATA / "FOCUS" / "testing" / "images").glob("*.png"))
-    out += [(p, "FOCUS test") for p in rng.sample(focus, min(n, len(focus)))]
-    planes = sorted((DATA / "ZENODO" / "Images").glob("*Plane6*.png"))
-    out += [(p, "FETAL_PLANES_DB") for p in rng.sample(planes, min(n, len(planes)))]
-    for cls in ("No_CHD", "CHD"):
-        hb = sorted((DATA / "HEARTBEAT" / "2T" / "test" / cls).glob("*/*.4C.01.png"))
-        out += [(p, f"Heartbeat {cls} (restricted)") for p in rng.sample(hb, min(n // 2, len(hb)))]
-    return out
+# Examples where the whole method works clearly (chambers plausible, no flag, normal ratios),
+# chosen by running it on every FOCUS test image and every FETAL_PLANES_DB thorax image.
+# FOCUS 016 and 018 are also among the hand-annotated test images (Dice 0.81 and 0.84).
+# None of them was used to train the networks. Heartbeat is not listed (restricted data).
+FOCUS_EXAMPLES = ("016", "018", "017", "021", "028", "031")
+PLANES_EXAMPLES = ("Patient00942_Plane6_4_of_4", "Patient00804_Plane6_1_of_2",
+                   "Patient00866_Plane6_1_of_5", "Patient01435_Plane6_2_of_5",
+                   "Patient01191_Plane6_2_of_2", "Patient01524_Plane6_4_of_6",
+                   "Patient01296_Plane6_1_of_5", "Patient00786_Plane6_5_of_5")
+
+
+def examples():
+    """The chosen examples present on this computer: (path, label)."""
+    out = [(DATA / "FOCUS" / "testing" / "images" / f"{n}.png", "FOCUS test") for n in FOCUS_EXAMPLES]
+    out += [(DATA / "ZENODO" / "Images" / f"{n}.png", "FETAL_PLANES_DB") for n in PLANES_EXAMPLES]
+    return [(p, lbl) for p, lbl in out if p.exists()]
 
 
 def verdict_markdown(a):
