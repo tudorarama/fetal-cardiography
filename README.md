@@ -79,6 +79,7 @@ scripts/                entry points, in the order they are run
   segment_planes.py                           heart outline of FETAL_PLANES_DB, used by four_chambers/
   segment_heartbeat.py, evaluate_heartbeat.py anomaly rules on real CHD cases (Heartbeat, 8)
 four_chambers/          stage 2: chamber annotation and nnU-Net v2 (4c-4e, 6b, 7b), own environment
+app/                    the whole method on one image (1-8): pipeline, command line, browser demo
 models/                 trained U-Nets (unet_*.pth, ~6 MB each) and tuned parameters (versioned)
 tests/                  unit tests
 docs/                   architecture diagram and README figures
@@ -144,6 +145,20 @@ py -3.14 -m venv .venv
 .venv\Scripts\python.exe train.py --epochs 200
 ```
 
+## Demo: the whole method on one image
+
+`app/` chains every step on a single image: heart and thorax (U-Net), CTR, square crop around the heart, four chambers (nnU-Net v2), plausibility checks, measurements and anomaly flags. Every step can refuse the image instead of guessing, and says why: colour Doppler, heart not found clearly, heart and thorax not usable together, or an implausible chamber segmentation. The models are loaded once; an image takes about 0.5 s on the GPU.
+
+It runs in the `four_chambers` environment (it needs nnU-Net and the trained model, see above), from the repository root:
+
+```
+four_chambers\.venv\Scripts\python.exe -m app.demo                                  # browser page on http://127.0.0.1:7860
+four_chambers\.venv\Scripts\python.exe -m app.analyse data\FOCUS\testing\images\001.png   # text report
+four_chambers\.venv\Scripts\python.exe -m app.analyse <images...> --out results\demo     # + figure and JSON per image
+```
+
+The page offers examples from FOCUS and FETAL_PLANES_DB, and from Heartbeat only when it is present locally (restricted data: do not share the page while Heartbeat images are on it). A flag is a reason for a specialist to look again, never a diagnosis.
+
 ## Testing the anomaly rules on real CHD cases (Heartbeat)
 
 Heartbeat is a restricted-access dataset of fetal echocardiography (patients with and without congenital heart disease, CHD). It was obtained from its authors and **may not be redistributed**: the images, the masks predicted on them and any figure showing them stay local (`data/`, `results/` and `four_chambers/nnunet/` are not versioned). Only the code and aggregated numbers are in the repository. Anyone who wants to run this must request access from the authors and unpack the dataset into `data/HEARTBEAT/` (`2T/`, `3T/`).
@@ -154,6 +169,15 @@ cd four_chambers
 .venv\Scripts\python.exe predict_heartbeat.py                      # 2. chambers with nnU-Net v2 + measurements, GPU ~15 min
 cd ..
 .venv\Scripts\python.exe scripts/evaluate_heartbeat.py             # 3. rules vs the CHD label -> results/heartbeat_*.csv
+```
+
+**Annotating Heartbeat images** for the four-chamber model (after step 1). The images are chosen by patient: 100 training / validation images of healthy (No_CHD) patients, so that the model never learns what a CHD heart looks like, and 60 test images (30 CHD, 30 No_CHD) drawn by hand. The list and the annotations stay in `four_chambers/annotations_heartbeat/`, which is not versioned.
+
+```
+cd four_chambers
+.venv\Scripts\python.exe select_heartbeat.py              # choose the images (one per patient)
+.venv\Scripts\python.exe predict.py --prefill             # pre-draw the training images
+.venv\Scripts\python.exe annotate.py --heartbeat --prefill  # correct them; test images open empty
 ```
 
 ## Results
