@@ -9,6 +9,7 @@ Run from the four_chambers folder:
     python annotate.py --prefill  # open images already outlined by the model (predict.py --prefill)
     python annotate.py --pick     # start on the image picker
     python annotate.py --add-planes  # append the FETAL_PLANES_DB images (select_planes.py)
+    python annotate.py --heartbeat   # the Heartbeat images (select_heartbeat.py), own list
 
 Choosing an image: key l opens a grid of all 300 FOCUS images (filters: all,
 train, val, test, to do, done; border colour = state). Click one to open it; an
@@ -18,6 +19,11 @@ annotated). Test images are never pre-filled by the model.
 Second source, FETAL_PLANES_DB (splits ptrain / pval / ptest, see select_planes.py):
 the heart outline shown with g comes from the stage-1 U-Net, not from an expert.
 Not every image is a four-chamber view: mark the others with x.
+
+Third source, Heartbeat (--heartbeat; splits htrain / hval / htest, see
+select_heartbeat.py): restricted data, so its list and annotations are kept in
+annotations_heartbeat/ (not versioned). Use --heartbeat --prefill for the
+training images; the test images (htest) always open empty and are drawn by hand.
 
 The list of images (annotations/selection.json) is fixed once, with a seed:
 30 train, 10 val, 10 test, interleaved (3 train, 1 val, 1 test, ...), so that
@@ -69,8 +75,8 @@ import numpy as np
 
 from common import (clahe, crop, is_complete, labels_to_polygons, list_cases, load_annotation,
                     load_focus_masks, load_image, role, save_annotation, short_name, thorax_crop_box)
-from config import (ALL_SPLITS, ANN_DIR, CHAMBERS as CLASSES, LANDMARKS as OPTIONAL,
-                    PREDICTIONS_DIR)
+from config import (ANN_DIR, CHAMBERS as CLASSES, EVERY_SPLIT, HEARTBEAT_ANN_DIR, HEARTBEAT_SPLITS,
+                    LANDMARKS as OPTIONAL, PREDICTIONS_DIR)
 
 PREFILL_DIR = PREDICTIONS_DIR / "prefill"
 
@@ -125,6 +131,23 @@ def add_planes(order, ann_dir):
     return order
 
 
+def heartbeat_selection(ann_dir):
+    """The Heartbeat list: every image of select_heartbeat.py, 3 htrain, 1 hval, 1 htest, ..."""
+    path = Path(ann_dir) / "selection.json"
+    have = json.loads(path.read_text()) if path.exists() else []
+    known = {tuple(x) for x in have}
+    rest = {s: [n for n in list_cases(s) if (s, n) not in known] for s in HEARTBEAT_SPLITS}
+    if not have and not any(rest.values()):
+        raise SystemExit("no Heartbeat images chosen yet: run select_heartbeat.py first")
+    while any(rest.values()):
+        for s in ("htrain", "htrain", "htrain", "hval", "htest"):
+            if rest[s]:
+                have.append([s, rest[s].pop(0)])
+    Path(ann_dir).mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(have, indent=1))
+    return have
+
+
 def selection(ann_dir):
     path = Path(ann_dir) / "selection.json"
     if path.exists():
@@ -142,7 +165,7 @@ def selection(ann_dir):
 
 
 def status(order, ann_dir):
-    done = {s: 0 for s in ALL_SPLITS}
+    done = {s: 0 for s in EVERY_SPLIT}
     skipped = 0
     for split, name in order:
         ann = load_annotation(split, name, ann_dir)
@@ -154,8 +177,11 @@ def status(order, ann_dir):
 
 
 class Annotator:
-    def __init__(self, order, ann_dir, start, sam=None, prefill_dir=None, pick=False):
+    def __init__(self, order, ann_dir, start, sam=None, prefill_dir=None, pick=False, heartbeat=False):
         self.order, self.ann_dir, self.i, self.sam = order, ann_dir, start, sam
+        self.heartbeat = heartbeat
+        self.splits = tuple(HEARTBEAT_SPLITS) if heartbeat else \
+            ("train", "val", "test", "ptrain", "pval", "ptest")
         self.prefill_dir = prefill_dir
         self.picker = None
         self.enhance, self.guide, self.use_sam = True, True, sam is not None
@@ -225,7 +251,8 @@ class Annotator:
         from picker import ImagePicker
         self.save()
         self.reset_prompt()
-        self.picker = ImagePicker(VIEW + PANEL, VIEW, self.ann_dir, self.order, self.order[self.i])
+        self.picker = ImagePicker(VIEW + PANEL, VIEW, self.ann_dir, self.order, self.order[self.i],
+                                  splits=self.splits)
 
     def next_todo(self):
         """Next train/val image (FOCUS order) without a finished annotation, or None.
@@ -233,7 +260,7 @@ class Annotator:
         Used by n at the end of the list. Test images are not added automatically:
         they are chosen on purpose in the picker and drawn by hand.
         """
-        for split in ("train", "val", "ptrain", "pval"):
+        for split in (s for s in self.splits if role(s) != "test"):
             for name in list_cases(split):
                 ann = load_annotation(split, name, self.ann_dir)
                 if not (is_complete(ann) or (ann and ann.get("skipped"))):
@@ -454,9 +481,11 @@ class Annotator:
         done, skipped = self.status_cache
         grey = (200, 200, 200)
         mode = "SAM (a: manual)" if self.use_sam else ("manual (a: SAM)" if self.sam else "manual")
-        lines = [(f"{self.i + 1}/{len(self.order)}: {short_name(split, name)}", (255, 255, 255)),
-                 (f"FOCUS  train {done['train']} val {done['val']} test {done['test']}", grey),
-                 (f"PLANES train {done['ptrain']} val {done['pval']} test {done['ptest']}", grey),
+        counts = [("HEARTBEAT", "h")] if self.heartbeat else [("FOCUS ", ""), ("PLANES", "p")]
+        lines = [(f"{self.i + 1}/{len(self.order)}: {short_name(split, name)}", (255, 255, 255))]
+        lines += [(f"{label} train {done[p + 'train']} val {done[p + 'val']} test {done[p + 'test']}", grey)
+                  for label, p in counts]
+        lines += [
                  (f"skipped {skipped}", grey), (f"mode: {mode}", (0, 255, 255)), ("", None),
                  ("now drawing:", grey), (f"  {self.cls}", COLORS[self.cls])]
         if self.use_sam:
@@ -509,7 +538,9 @@ def main():
     ap.add_argument("--start", type=int, help="1-based position in the list")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--no-sam", action="store_true", help="manual drawing only")
-    ap.add_argument("--ann-dir", default=str(ANN_DIR))
+    ap.add_argument("--ann-dir", help="default: annotations/ (annotations_heartbeat/ with --heartbeat)")
+    ap.add_argument("--heartbeat", action="store_true",
+                    help="annotate the Heartbeat images chosen by select_heartbeat.py")
     ap.add_argument("--extend", action="store_true",
                     help="append the remaining FOCUS train/val images to the list")
     ap.add_argument("--prefill", nargs="?", const=str(PREFILL_DIR), default=None,
@@ -518,16 +549,20 @@ def main():
     ap.add_argument("--add-planes", action="store_true",
                     help="append the FETAL_PLANES_DB images of planes_split.json to the list")
     args = ap.parse_args()
+    args.ann_dir = args.ann_dir or str(HEARTBEAT_ANN_DIR if args.heartbeat else ANN_DIR)
 
-    order = selection(args.ann_dir)
+    if args.heartbeat:
+        if args.extend or args.add_planes:
+            raise SystemExit("--extend / --add-planes are for the FOCUS list, not with --heartbeat")
+        order = heartbeat_selection(args.ann_dir)
+    else:
+        order = selection(args.ann_dir)
     if args.extend:
         order = extend_selection(order, args.ann_dir)
     if args.add_planes:
         order = add_planes(order, args.ann_dir)
     done, skipped = status(order, args.ann_dir)
-    print(f"annotated: FOCUS train {done['train']}, val {done['val']}, test {done['test']} | "
-          f"FETAL_PLANES_DB train {done['ptrain']}, val {done['pval']}, test {done['ptest']} "
-          f"(list of {len(order)} images), skipped {skipped}")
+    print(f"annotated: {progress(done, args.heartbeat)} (list of {len(order)} images), skipped {skipped}")
     if args.status:
         return
     sam = None
@@ -545,11 +580,15 @@ def main():
         start = next((i for i, (s, n) in enumerate(order)
                       if not (is_complete(a := load_annotation(s, n, args.ann_dir))
                               or (a and a.get("skipped")))), len(order) - 1)
-    Annotator(order, args.ann_dir, start, sam, args.prefill, args.pick).run()
+    Annotator(order, args.ann_dir, start, sam, args.prefill, args.pick, args.heartbeat).run()
     done, skipped = status(order, args.ann_dir)
-    print(f"saved. annotated: FOCUS train {done['train']}, val {done['val']}, test {done['test']} | "
-          f"FETAL_PLANES_DB train {done['ptrain']}, val {done['pval']}, test {done['ptest']}, "
-          f"skipped {skipped}")
+    print(f"saved. annotated: {progress(done, args.heartbeat)}, skipped {skipped}")
+
+
+def progress(done, heartbeat):
+    sources = [("Heartbeat", "h")] if heartbeat else [("FOCUS", ""), ("FETAL_PLANES_DB", "p")]
+    return " | ".join(f"{label} train {done[p + 'train']}, val {done[p + 'val']}, test {done[p + 'test']}"
+                      for label, p in sources)
 
 
 if __name__ == "__main__":

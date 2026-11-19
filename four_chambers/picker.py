@@ -38,11 +38,11 @@ def state(ann):
 
 
 class ImagePicker:
-    def __init__(self, width, height, ann_dir, order, current):
+    def __init__(self, width, height, ann_dir, order, current, splits=ALL_SPLITS):
         self.w, self.h, self.ann_dir = width, height, ann_dir
         self.position = {tuple(x): i for i, x in enumerate(order)}  # (split, name) -> list index
         self.current = tuple(current)
-        self.all = [(s, n) for s in ALL_SPLITS for n in list_cases(s)]
+        self.all = [(s, n) for s in splits for n in list_cases(s)]
         self.filter, self.page = "all", 0
         self.thumbs = {}
         self.tile_w = width // COLS

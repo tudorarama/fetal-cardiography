@@ -1,36 +1,66 @@
-"""Shared helpers: images of both sources, chamber annotations, label maps, crops.
+"""Shared helpers: images of the three sources, chamber annotations, label maps, crops.
 
 A case is (split, name). FOCUS: split train / val / test, name '001'.
 FETAL_PLANES_DB: split ptrain / pval / ptest, name 'Patient00168_Plane6_1_of_4'.
-role(split) gives 'train', 'val' or 'test' for both sources.
+HEARTBEAT: split htrain / hval / htest, name '2T_P0163.4C.01' (trimester_image).
+role(split) gives 'train', 'val' or 'test' for every source.
 """
+import functools
 import json
 from pathlib import Path
 
 import cv2
 import numpy as np
 
-from config import (ANN_DIR, CHAMBERS, FOCUS_DIR, LABELS, LANDMARKS, PLANES_DIR, PLANES_SPLIT_FILE,
-                    PLANES_SPLITS, SPLITS)
+from config import (ANN_DIR, CHAMBERS, FOCUS_DIR, HEARTBEAT_ANN_DIR, HEARTBEAT_DIR, HEARTBEAT_MASK_DIR,
+                    HEARTBEAT_SPLIT_FILE, HEARTBEAT_SPLITS, LABELS, LANDMARKS, PLANES_DIR,
+                    PLANES_SPLIT_FILE, PLANES_SPLITS, SPLITS)
 
 
 # ----------------------------------------------------------------- image data
 
 def role(split):
-    """'train', 'val' or 'test' for a split of either source."""
-    return PLANES_SPLITS.get(split, split)
+    """'train', 'val' or 'test' for a split of any source."""
+    return PLANES_SPLITS.get(split) or HEARTBEAT_SPLITS.get(split) or split
 
 
 def is_planes(split):
     return split in PLANES_SPLITS
 
 
+def is_heartbeat(split):
+    return split in HEARTBEAT_SPLITS
+
+
 def source(split):
+    if is_heartbeat(split):
+        return "HEARTBEAT"
     return "FETAL_PLANES_DB" if is_planes(split) else "FOCUS"
 
 
+@functools.lru_cache(maxsize=4)
+def _heartbeat_split(mtime):
+    return json.loads(HEARTBEAT_SPLIT_FILE.read_text())
+
+
+def heartbeat_split():
+    """select_heartbeat.py output: {'htrain': [...], 'hval': [...], 'htest': [...], 'paths': {name: rel}}."""
+    if not HEARTBEAT_SPLIT_FILE.exists():
+        return {}
+    return _heartbeat_split(HEARTBEAT_SPLIT_FILE.stat().st_mtime)
+
+
+def heartbeat_rel_path(row):
+    """'<trimester>/<part>/<class>/<patient>/<image>.png' of a row of heartbeat_outline.csv."""
+    stem = row["id"].split("_", 1)[1]
+    cls = "CHD" if row["chd"] else "No_CHD"
+    return f"{row['trimester']}/{row['part']}/{cls}/{row['patient']}/{stem}.png"
+
+
 def list_cases(split):
-    """Case names of a split: FOCUS folders, or the FETAL_PLANES_DB choice (planes_split.json)."""
+    """Case names of a split: FOCUS folders, or the chosen FETAL_PLANES_DB / Heartbeat images."""
+    if is_heartbeat(split):
+        return list(heartbeat_split().get(split, []))
     if is_planes(split):
         if not PLANES_SPLIT_FILE.exists():
             return []
@@ -39,6 +69,8 @@ def list_cases(split):
 
 
 def image_path(split, name):
+    if is_heartbeat(split):
+        return HEARTBEAT_DIR / heartbeat_split()["paths"][name]
     if is_planes(split):
         return PLANES_DIR / "Images" / f"{name}.png"
     return FOCUS_DIR / SPLITS[split] / "images" / f"{name}.png"
@@ -63,7 +95,10 @@ def load_image(split, name):
 def load_focus_masks(split, name):
     """Heart ('cardiac') and thorax masks, 0/1 uint8: the FOCUS ground truth, or for
     FETAL_PLANES_DB the stage-1 U-Net prediction. Used to frame the view and the ROI."""
-    d = PLANES_DIR / "masks" if is_planes(split) else FOCUS_DIR / SPLITS[split] / "annfiles_mask"
+    if is_heartbeat(split):
+        d = HEARTBEAT_MASK_DIR
+    else:
+        d = PLANES_DIR / "masks" if is_planes(split) else FOCUS_DIR / SPLITS[split] / "annfiles_mask"
     return {k: (cv2.imread(str(d / f"{name}-{k}.png"), cv2.IMREAD_GRAYSCALE) > 0).astype(np.uint8)
             for k in ("cardiac", "thorax")}
 
@@ -79,18 +114,24 @@ def case_id(split, name):
 
 # ------------------------------------------------------------------ annotations
 
-def annotation_path(split, name, ann_dir=ANN_DIR):
-    return Path(ann_dir) / f"{split}_{name}.json"
+def annotation_dir(split):
+    """Heartbeat annotations are kept apart (not versioned: restricted data)."""
+    return HEARTBEAT_ANN_DIR if is_heartbeat(split) else ANN_DIR
 
 
-def load_annotation(split, name, ann_dir=ANN_DIR):
+def annotation_path(split, name, ann_dir=None):
+    return Path(ann_dir or annotation_dir(split)) / f"{split}_{name}.json"
+
+
+def load_annotation(split, name, ann_dir=None):
     p = annotation_path(split, name, ann_dir)
     return json.loads(p.read_text()) if p.exists() else None
 
 
-def save_annotation(ann, ann_dir=ANN_DIR):
-    Path(ann_dir).mkdir(parents=True, exist_ok=True)
-    annotation_path(ann["split"], ann["name"], ann_dir).write_text(json.dumps(ann, indent=1))
+def save_annotation(ann, ann_dir=None):
+    p = annotation_path(ann["split"], ann["name"], ann_dir)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(ann, indent=1))
 
 
 def is_complete(ann):
@@ -99,11 +140,12 @@ def is_complete(ann):
         all(len(ann["polygons"].get(c, [])) >= 3 for c in CHAMBERS)
 
 
-def completed(ann_dir=ANN_DIR):
-    """[(split, name)] of every completely annotated image."""
+def completed(ann_dir=None):
+    """[(split, name)] of every completely annotated image (default: all sources)."""
     out = []
-    for p in sorted(Path(ann_dir).glob("*_*.json")):
-        if p.stem == "selection":
+    dirs = [Path(ann_dir)] if ann_dir else [ANN_DIR, HEARTBEAT_ANN_DIR]
+    for p in sorted(f for d in dirs for f in d.glob("*_*.json")):
+        if p.stem in ("selection", "heartbeat_split"):
             continue
         ann = json.loads(p.read_text())
         if is_complete(ann):

@@ -20,7 +20,12 @@ results/
 # Four chambers: generated nnU-Net data and the trained model (see the GitHub Release)
 four_chambers/nnunet/
 four_chambers/annotations_backup/
+# Heartbeat (restricted, may not be redistributed): its image list and chamber annotations
+four_chambers/annotations_heartbeat/
 *.log
+
+# Gradio demo cache (uploaded images)
+.gradio/
 *.pth
 
 # models/: the small trained U-Nets (~6 MB each) and tuned parameters are versioned;

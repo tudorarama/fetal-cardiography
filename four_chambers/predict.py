@@ -37,7 +37,7 @@ def cases_to_predict(prefill):
     if not prefill:
         return [c for c in completed() if role(c[0]) == "test"]
     out = []
-    for split in ("train", "val", "ptrain", "pval"):
+    for split in ("train", "val", "ptrain", "pval", "htrain", "hval"):
         for name in list_cases(split):
             ann = load_annotation(split, name)
             if ann is None or not (is_complete(ann) or ann.get("skipped")):

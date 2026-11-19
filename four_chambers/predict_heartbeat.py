@@ -32,22 +32,18 @@ import cv2
 import pandas as pd
 from tqdm import tqdm
 
-from common import roi_box
-from config import CHAMBERS, PREDICTIONS_DIR, PROJECT, setup_nnunet_env
+from common import heartbeat_rel_path, roi_box
+from config import (CHAMBERS, HEARTBEAT_DIR, HEARTBEAT_MASK_DIR as MASK_DIR, PREDICTIONS_DIR, PROJECT,
+                    setup_nnunet_env)
 from measurements import chamber_measurements, screen, segmentation_quality
 from predict import default_trainer, predict_rois
 
 OUTLINE_CSV = PROJECT / "results" / "heartbeat_outline.csv"
 OUT_CSV = PROJECT / "results" / "heartbeat_chambers.csv"
-MASK_DIR = PROJECT / "data" / "HEARTBEAT_masks"
-HEARTBEAT_DIR = PROJECT / "data" / "HEARTBEAT"
 
 
 def image_path(row):
-    """data/HEARTBEAT/<trimester>/<part>/<class>/<patient>/<image>.png from an outline row."""
-    stem = row["id"].split("_", 1)[1]
-    cls = "CHD" if row["chd"] else "No_CHD"
-    return HEARTBEAT_DIR / row["trimester"] / row["part"] / cls / row["patient"] / f"{stem}.png"
+    return HEARTBEAT_DIR / heartbeat_rel_path(row)
 
 
 def main():
