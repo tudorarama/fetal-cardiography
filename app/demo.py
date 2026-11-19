@@ -1,6 +1,6 @@
 """Interactive demo in the browser (Gradio), local only.
 
-Run from the project root with the four_chambers environment:
+Run from the project root (any Python: it switches to four_chambers/.venv itself):
     four_chambers\\.venv\\Scripts\\python.exe -m app.demo            # http://127.0.0.1:7860
     four_chambers\\.venv\\Scripts\\python.exe -m app.demo --cpu      # without a GPU (slower)
 
@@ -16,6 +16,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # also runs as "python app/demo.py"
+
+from app import use_four_chambers_python  # noqa: E402
+
+use_four_chambers_python()
 
 import gradio as gr
 import pandas as pd
