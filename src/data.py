@@ -132,7 +132,7 @@ def load_planes_table():
 def load_heartbeat_table(view="4C"):
     """One row per Heartbeat image of a view.
 
-    Columns: id (unique, e.g. '2T_P0163.4C.01'), image_path, patient, trimester,
+    Columns: id (unique, e.g. '2T_P0123.4C.01' (example)), image_path, patient, trimester,
     part ('cross_val' / 'test'), exam ('2T_P0163': one patient in one trimester;
     296 patients were scanned in both), chd (1 = CHD), and the clinical fields.
     """

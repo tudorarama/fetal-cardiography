@@ -2,7 +2,7 @@
 
 A case is (split, name). FOCUS: split train / val / test, name '001'.
 FETAL_PLANES_DB: split ptrain / pval / ptest, name 'Patient00168_Plane6_1_of_4'.
-HEARTBEAT: split htrain / hval / htest, name '2T_P0163.4C.01' (trimester_image).
+HEARTBEAT: split htrain / hval / htest, name '2T_P0123.4C.01' (example) (trimester_image).
 role(split) gives 'train', 'val' or 'test' for every source.
 """
 import functools
