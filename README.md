@@ -149,12 +149,12 @@ py -3.14 -m venv .venv
 
 `app/` chains every step on a single image: heart and thorax (U-Net), CTR, square crop around the heart, four chambers (nnU-Net v2), plausibility checks, measurements and anomaly flags. Every step can refuse the image instead of guessing, and says why: colour Doppler, heart not found clearly, heart and thorax not usable together, or an implausible chamber segmentation. The models are loaded once; an image takes about 0.5 s on the GPU.
 
-It runs in the `four_chambers` environment (it needs nnU-Net and the trained model, see above), from the repository root:
+It runs in the `four_chambers` environment (it needs nnU-Net and the trained model, see above); started with any other Python it switches to that environment itself. From the repository root:
 
 ```
-four_chambers\.venv\Scripts\python.exe -m app.demo                                  # browser page on http://127.0.0.1:7860
-four_chambers\.venv\Scripts\python.exe -m app.analyse data\FOCUS\testing\images\001.png   # text report
-four_chambers\.venv\Scripts\python.exe -m app.analyse <images...> --out results\demo     # + figure and JSON per image
+python -m app.demo                                  # browser page on http://127.0.0.1:7860
+python -m app.analyse data\FOCUS\testing\images\001.png   # text report
+python -m app.analyse <images...> --out results\demo     # + figure and JSON per image
 ```
 
 The page offers examples from FOCUS and FETAL_PLANES_DB, and from Heartbeat only when it is present locally (restricted data: do not share the page while Heartbeat images are on it). A flag is a reason for a specialist to look again, never a diagnosis.

@@ -1,6 +1,6 @@
 """Analyses fetal four-chamber images from the command line.
 
-Run from the project root with the four_chambers environment:
+Run from the project root (any Python: it switches to four_chambers/.venv itself):
     four_chambers\\.venv\\Scripts\\python.exe -m app.analyse data/FOCUS/testing/images/022.png
     four_chambers\\.venv\\Scripts\\python.exe -m app.analyse img1.png img2.png --out results/demo
 Prints the measurements and flags of every image (JSON with --json); with --out it
@@ -12,6 +12,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # also runs as "python app/analyse.py"
+
+from app import use_four_chambers_python  # noqa: E402
+
+use_four_chambers_python()
 
 import cv2
 import numpy as np
