@@ -4,6 +4,24 @@ Segmentation of Cardiac Structures (the Four Chambers of the Fetal Heart) in 2D 
 
 ## Project Description
 
+Congenital heart disease (CHD) is the most common birth defect, affecting about 1 in 100 newborns. Many cases can be seen before birth on the **four-chamber view** of the fetal heart, but the ultrasound images are noisy (speckle) and their reading depends on the experience of the examiner. This project builds an image-processing pipeline that outlines the fetal heart on 2D ultrasound images and turns the outlines into simple measurements that can flag a heart for a second look.
+
+The pipeline has two tracks:
+
+- **Heart and thorax.** The images are preprocessed (median filter, bilateral filter, CLAHE, z-score normalization), then the heart and the thorax are segmented with two methods that are compared on the same test images: a classical method (Otsu thresholding + Chan-Vese active contours) and a U-Net. The outlines are refined into ellipses, from which the cardiothoracic ratio (CTR) is measured.
+- **Four chambers.** The left and right ventricles and atria (LV, RV, LA, RA) are segmented with nnU-Net v2, trained on chamber outlines drawn for this project with the help of Segment Anything (SAM). The network sees a square crop around the heart; the chamber areas give the LV/RV and LA/RA ratios.
+
+Simple rules on these measurements (CTR > 0.35, chamber ratios outside 0.5–2, a missing chamber) flag possible anomalies. They are a screening aid, not a diagnosis.
+
+**Data.** [FOCUS](https://doi.org/10.5281/zenodo.14597550) (300 four-chamber images with heart and thorax ellipses) is used for training and testing. [FETAL_PLANES_DB](https://doi.org/10.5281/zenodo.3904280) (485 thorax images from other machines, without annotations) and Heartbeat (real CHD cases, restricted access) test the pipeline on images it has never seen.
+
+**Main results so far** (details in [Results](#results)):
+
+- heart and thorax: U-Net Dice 0.92 / 0.97 on the FOCUS test set, against 0.68 / 0.82 for the classical method;
+- four chambers: mean Dice 0.72 on 10 hand-drawn test images, the ventricles better than the atria;
+- anomaly rules: they detect synthetic cardiomegaly once the U-Net is trained with random heart sizes (sensitivity 0.69, specificity 0.95), but catch few real CHD cases on Heartbeat (sensitivity 0.19), since many defects do not show in the four-chamber view.
+
+**Current limitations and next steps.** On the FOCUS test set the chamber crop still uses the annotated heart outline (on external images it comes from the U-Net); the chamber test set has only 10 images; the effect of each preprocessing step is being measured with a dedicated ablation study (`scripts/ablation_preprocessing.py`).
 
 ## State of the Art
 
@@ -13,9 +31,9 @@ Analysis of similar articles / applications / projects from the last 5 years.
 
 | No. | Author(s) / Year | Title of the article / project | Application / Domain | Technologies used | Methodology / Approach | Results | Limitations | Additional comments |
 |-----|------------------|--------------------------------|----------------------|-------------------|------------------------|---------|-------------|---------------------|
-| 1 | Zhang et al. / 2025 | [You Can Detect It: Fetal Biometric Estimation Using Ellipse Detection](https://papers.miccai.org/miccai-2025/paper/5236_paper.pdf) + [FOCUS dataset](https://doi.org/10.5281/zenodo.14597550) | Finding the heart and the chest on fetal four-chamber ultrasound images and computing the heart-to-chest ratio (CTR) | PyTorch, ResNet50, U-Net, TransUNet | They detect the heart and the chest as ellipses instead of drawing exact contours. They also publish the FOCUS dataset (300 images with labels) | Dice 93.2% for the heart and 94.9% for the chest. U-Net got 89.1% and 94.0% | Only 300 images, all from one source | This is the dataset I use in my project, so I can compare my U-Net with their results |
-| 2 | Le et al. / 2026 | [Ultra-ECP: Ellipse-Constrained and Point-Robust Foundation Model Adaptation for Fetal Cardiac Ultrasound Segmentation](https://proceedings.mlr.press/v315/le26a.html) | Segmenting the fetal heart and chest on the four-chamber view | UltraSAM (a "Segment Anything" model for ultrasound), LoRA | They take a large pretrained model and fine-tune only a small part of it. The user clicks a point and the model segments the region | Dice 95.1% for the chest and 92.6% for the heart on FOCUS | Not fully automatic (needs a click); the code is not public | Best result I found on FOCUS, useful as a target for my methods |
-| 3 | Liang et al. / 2024 | [Automatic segmentation of 15 critical anatomical labels and measurements of cardiac axis and cardiothoracic ratio in fetal four chambers using nnU-NetV2](https://doi.org/10.1186/s12911-024-02527-x) | Segmenting 15 parts of the fetal heart and measuring the heart axis and the CTR | nnU-NetV2 | They segment the image, then fit lines and ellipses on the masks to get the measurements. They compare the results with doctors | Average Dice 87.1%. The CTR was close to what experienced doctors measured | Private data from one hospital; the heart axis was less accurate than the doctors | Shows how to get a medical measurement from a segmentation mask, like I do in my project |
+| 1 | Zhang et al. / 2025 | [You Can Detect It: Fetal Biometric Estimation Using Ellipse Detection](https://papers.miccai.org/miccai-2025/paper/5236_paper.pdf) + [FOCUS dataset](https://doi.org/10.5281/zenodo.14597550) | Finding the heart and the chest on fetal four-chamber ultrasound images and computing the heart-to-chest ratio (CTR) | PyTorch, ResNet50, U-Net, TransUNet | They detect the heart and the chest as ellipses instead of drawing exact contours. They also publish the FOCUS dataset (300 images with labels) | Dice 93.2% for the heart and 94.9% for the chest. U-Net got 89.1% and 94.0% | Only 300 images, all from one source | This is the dataset used in our project, so our U-Net can be compared with their results |
+| 2 | Le et al. / 2026 | [Ultra-ECP: Ellipse-Constrained and Point-Robust Foundation Model Adaptation for Fetal Cardiac Ultrasound Segmentation](https://proceedings.mlr.press/v315/le26a.html) | Segmenting the fetal heart and chest on the four-chamber view | UltraSAM (a "Segment Anything" model for ultrasound), LoRA | They take a large pretrained model and fine-tune only a small part of it. The user clicks a point and the model segments the region | Dice 95.1% for the chest and 92.6% for the heart on FOCUS | Not fully automatic (needs a click); the code is not public | Best result found on FOCUS, a target for our methods |
+| 3 | Liang et al. / 2024 | [Automatic segmentation of 15 critical anatomical labels and measurements of cardiac axis and cardiothoracic ratio in fetal four chambers using nnU-NetV2](https://doi.org/10.1186/s12911-024-02527-x) | Segmenting 15 parts of the fetal heart and measuring the heart axis and the CTR | nnU-NetV2 | They segment the image, then fit lines and ellipses on the masks to get the measurements. They compare the results with doctors | Average Dice 87.1%. The CTR was close to what experienced doctors measured | Private data from one hospital; the heart axis was less accurate than the doctors | Shows how to get a medical measurement from a segmentation mask, as we do in our project |
 | 4 | Li et al. / 2025 | [DCD: A Semantic Segmentation Model for Fetal Ultrasound Four-Chamber View](https://arxiv.org/abs/2506.08534) | Multi-class semantic segmentation of 13 anatomical structures in the fetal heart four-chamber view (4CH) | PyTorch, DeepLabv3+, Xception, CBAM, Dense ASPP | Enhanced DeepLabv3+ architecture with Xception backbone, CBAM attention modules, and Dense ASPP for fine boundary capture; trained with a hybrid loss ($L_{\text{CE}} + L_{\text{Dice}}$) | High mIoU and Dice scores across all 13 anatomical classes, significantly outperforming standard U-Net and DeepLabv3+ | High computational complexity during training due to the 13 anatomical classes | Provides a strong architectural baseline for detailed multi-class chamber segmentation in the 4CH view |
 | 5 | Arnaout et al. / 2021 | [An ensemble of neural networks provides expert-level prenatal detection of complex congenital heart disease](https://doi.org/10.1038/s41591-021-01342-5) | Detecting heart defects in babies before birth | Several CNNs combined | First the model finds the right ultrasound views, then it decides if the heart is normal or not. A separate model segments the heart for measurements | AUC 0.99, sensitivity 95%, specificity 96% | Tested on old (retrospective) data with very few sick cases; in a later test it gave many false alarms | Shows that segmentation can also help with finding heart defects |
 
@@ -32,22 +50,28 @@ Analysis of similar articles / applications / projects from the last 5 years.
 
 ### Components
 
-1. **FOCUS Dataset:** Ingestion of 300 fetal ultrasound images in the 4-Chamber View (4CH) provided with corresponding ground-truth ellipse parameter labels for the heart and chest regions.
-2. **Data Loading & Ground Truth:** Partitioning the dataset into training, validation, and testing subsets, followed by converting parametric ellipse annotations into binary segmentation masks for model supervision.
-3. **Preprocessing:** Contrast enhancement and noise suppression pipelines utilizing median filtering, bilateral filtering, and CLAHE (Contrast Limited Adaptive Histogram Equalization) to mitigate characteristic ultrasound speckle noise.
-4. **Segmentation Module:**
-   - **4a. Classical Segmentation:** Baseline algorithmic approach combining Otsu thresholding for thorax isolation and Chan-Vese active contours for heart region extraction.
-   - **4b. Deep Learning Segmentation:** Primary supervised semantic segmentation pipeline utilizing a U-Net convolutional neural network trained on ground-truth masks.
-   - **4c. Chamber Annotation:** Manual delineation of the four chambers (LV, RV, LA, RA) on FOCUS images, assisted by Segment Anything (SAM), with optional landmarks (spine or descending aorta) for the cardiac axis.
-   - **4d. Region of Interest:** Square crop around the heart outline (+20%), resized to 384 × 384, so that the chamber network sees only the heart.
-   - **4e. nnU-Net v2:** Self-configuring 2D network trained from scratch on the chamber annotations; its probabilities are resized back into the full image.
-5. **Post-Processing:** Mask refinement through largest connected component extraction and geometric ellipse fitting to obtain smoothed, geometrically consistent boundaries.
-6. **Segmentation Evaluation:** Quantitative validation comparing predicted segmentation masks against ground-truth annotations using metrics such as the Dice Similarity Coefficient (DSC) and 95th percentile Hausdorff Distance (HD95).
-   - **6b. Chamber Evaluation:** Dice and HD95 per chamber against the hand-drawn annotation of the test images.
-7. **Measurements:** Automated calculation of key clinical biometrics, specifically the Cardiothoracic Ratio (CTR) and the cardiac axis orientation.
-   - **7b. Chamber Measurements:** LV/RV and LA/RA area ratios and the cardiac axis (interventricular septum versus the spine–thorax centre line).
-8. **Anomaly Detection:** Rule-based screening mechanism that flags potential congenital cardiac anomalies (e.g., cardiomegaly) whenever the computed CTR exceeds clinical safety thresholds, the chamber ratios fall outside 0.5–2, a chamber is missing or the cardiac axis lies outside 25–65°.
-9. **Results & Comparison:** Synthesis of comparative metrics, performance tables, and graphical plots evaluating the classical (Chan-Vese) versus deep learning (U-Net) segmentation approaches, and the Dice per chamber of the nnU-Net model.
+The diagram reads from left to right: two datasets and one loading step, then the heart and thorax track (top) and the four-chamber track (bottom), which both feed the anomaly rules. The images in the boxes are real outputs of the pipeline.
+
+1. **Datasets:**
+   - **FOCUS:** 300 fetal ultrasound images in the four-chamber view, with ground-truth ellipses for the heart and the thorax (official split: 200 train / 50 validation / 50 test).
+   - **FETAL_PLANES_DB:** 485 thorax images from other machines, one per patient, without outlines. Their heart outline comes from the U-Net (4b).
+2. **Data loading & ground truth:** reading the images and labels, splitting by patient (several images of one fetus never end up in two sets) and converting the ellipse parameters into binary masks.
+3. **Preprocessing:** median filter (removes isolated speckle points) → bilateral filter (smooths uniform regions, keeps edges) → CLAHE (local contrast). The z-score normalization is computed on the *preprocessed* training images (`scripts/compute_norm_stats.py`), so the network gets centred inputs. During training every image is randomly augmented (rotation, zoom, shift, left-right mirror, brightness).
+4. **Segmentation:**
+   - **4a. Classical method:** the thorax is found by casting rays from the expected centre and keeping the thoracic wall (a bright → dark edge above the Otsu threshold), then fitting a robust ellipse; the heart is found inside the thorax with hierarchical Chan-Vese (the darkest phase is the blood in the chambers). The parameters are tuned on the validation set.
+   - **4b. U-Net (MONAI):** two independent outputs (heart, thorax), trained from random weights on FOCUS train, the epoch chosen on validation. Its heart outline also gives the crop (4d) on images without annotation (dashed arrow).
+   - **4c. Chamber annotation:** LV, RV, LA and RA drawn on 124 FOCUS images; SAM proposes the outline from a click and the annotator corrects it. Optional landmark (spine or descending aorta) for the cardiac axis. 123 annotations are usable: 103 train, 10 validation, 10 test.
+   - **4d. Crop:** a square around the heart outline (+20 % on each side), resized to 384 × 384, so that the chamber network sees only the heart.
+   - **4e. nnU-Net v2:** self-configuring 2D network trained from scratch on the chamber annotations; its probabilities are mapped back into the full image before the labels are chosen.
+5. **Post-processing:** largest connected component → hole filling → ellipse fitting, the same for the classical method and the U-Net.
+6. **Measurements (heart and thorax):** cardiothoracic ratio CTR = heart area / thorax area, and an approximate cardiac axis (angle between the heart and thorax ellipses).
+7. **Measurements (chambers):** LV/RV and LA/RA area ratios, the share of each chamber in the heart, and the cardiac axis (interventricular septum versus the spine → thorax centre line, where the spine was annotated).
+8. **Anomaly rules** (screening, not diagnosis): CTR > 0.35 → cardiomegaly; LV/RV or LA/RA outside 0.5–2 → disproportion; a chamber below 3 % of the heart → missing chamber; cardiac axis outside 25–65° → abnormal axis.
+9. **Testing the rules:**
+   - **synthetic cardiomegaly:** FOCUS has no enlarged hearts, so the heart of each test image is enlarged 1.0–1.4× inside the thorax; the true CTR of the warped image is known;
+   - **Heartbeat:** real CHD and normal exams from other machines, used only as an external test (restricted access: only aggregated numbers are published).
+
+**Evaluation** (bottom of the diagram): every segmentation is scored on the test images with the Dice coefficient (overlap) and HD95 (95th percentile distance between the outlines, in pixels). The test set is used once, after tuning on validation, and methods are compared image by image with the Wilcoxon signed-rank test. The anomaly rules are scored with sensitivity and specificity.
 
 ## Project structure
 
@@ -62,23 +86,25 @@ src/                    shared library (functions only, no entry points)
   classical.py          Otsu thorax + Chan-Vese heart                            (4a)
   unet.py               MONAI U-Net: model, training dataset, predictor          (4b)
   postprocess.py        largest component, hole filling, ellipse fit             (5)
-  metrics.py            Dice, HD95                                               (6)
-  evaluation.py         runs any predictor on a split and scores it              (6)
-  measurements.py       CTR and cardiac axis from the ellipses                   (7)
+  metrics.py            Dice, HD95                                               (evaluation)
+  evaluation.py         runs any predictor on a split and scores it              (evaluation)
+  measurements.py       CTR and cardiac axis from the ellipses                   (6)
   anomaly.py            rule-based flags (CTR > 0.35, ...)                       (8)
-  synthetic.py          synthetic cardiomegaly (enlarged hearts) for testing     (8)
-  outline.py            U-Net heart/thorax outline + quality checks on unlabelled images
+  synthetic.py          synthetic cardiomegaly (enlarged hearts) for testing     (9)
+  outline.py            U-Net outline + quality checks on unlabelled images      (4b -> 4d)
 scripts/                entry points, in the order they are run
-  check_data.py, inspect_data.py              datasets present and readable
-  demo_preprocessing.py, demo_roi.py          preprocessing figures
-  preprocess_dataset.py, verify_processed.py  cached preprocessed tensors
+  check_data.py, inspect_data.py              datasets present and readable (1, 2)
+  compute_norm_stats.py                       z-score statistics of the preprocessed images (3)
+  demo_preprocessing.py, demo_roi.py          preprocessing figures (3)
+  preprocess_dataset.py, verify_processed.py  cached preprocessed tensors (3)
+  ablation_preprocessing.py                   which preprocessing steps help, U-Net and classical (3)
   validate_pipeline.py                        sanity check of the metrics on the ground truth
   tune_classical.py, evaluate_classical.py    classical method (4a)
-  train_unet.py, evaluate_unet.py             U-Net (4b) and comparison (9)
-  evaluate_anomaly.py                         cardiomegaly rule on real and synthetic images (8)
-  segment_planes.py                           heart outline of FETAL_PLANES_DB, used by four_chambers/
-  segment_heartbeat.py, evaluate_heartbeat.py anomaly rules on real CHD cases (Heartbeat, 8)
-four_chambers/          stage 2: chamber annotation and nnU-Net v2 (4c-4e, 6b, 7b), own environment
+  train_unet.py, evaluate_unet.py             U-Net (4b) and comparison with the classical method
+  evaluate_anomaly.py                         cardiomegaly rule on real and synthetic images (8, 9)
+  segment_planes.py                           heart outline of FETAL_PLANES_DB (4b -> 4d)
+  segment_heartbeat.py, evaluate_heartbeat.py anomaly rules on real CHD cases (Heartbeat, 9)
+four_chambers/          stage 2: chamber annotation and nnU-Net v2 (4c-4e, 7), own environment
 models/                 trained U-Nets (unet_*.pth, ~6 MB each) and tuned parameters (versioned)
 tests/                  unit tests
 docs/                   architecture diagram and README figures
@@ -112,6 +138,13 @@ Training again (about 28 min per U-Net on CPU, 100 epochs):
 .venv\Scripts\python.exe scripts/train_unet.py                    # -> models/unet_pre.pth (with preprocessing filters)
 .venv\Scripts\python.exe scripts/train_unet.py --no-preprocess    # -> models/unet_raw.pth (ablation)
 .venv\Scripts\python.exe scripts/train_unet.py --heart-size-aug   # -> models/unet_pre_cm.pth (random heart size)
+```
+
+Preprocessing ablation (6 combinations of the filters, 3 trainings each, about 40 min per training on CPU; finished runs are skipped when it is started again):
+
+```
+.venv\Scripts\python.exe scripts/ablation_preprocessing.py --smoke   # 2-3 min check that everything runs
+.venv\Scripts\python.exe scripts/ablation_preprocessing.py           # -> results/ablation/
 ```
 
 ## Running the four-chamber model (nnU-Net v2)
@@ -160,9 +193,11 @@ cd ..
 
 ### Preprocessing
 
-Raw FOCUS images, the same images after preprocessing (median filter, bilateral filter, CLAHE) and the ground-truth heart (red) and thorax (green) ellipses (`scripts/demo_preprocessing.py`):
+Raw FOCUS images, the same images after preprocessing (median filter, bilateral filter, CLAHE) and the ground-truth heart (red) and thorax (green) ellipses (`scripts/demo_preprocessing.py`). The filters reduce the speckle and make the heart walls clearer.
 
 ![Preprocessing examples](docs/preprocessing_demo.png)
+
+With the filters the U-Net outlines are slightly better than without them (heart HD95 17.3 px instead of 18.7, table below), but this comes from a single training of each network. `scripts/ablation_preprocessing.py` measures the effect of each step separately (median, bilateral, CLAHE and their combinations), with three trainings per variant and the normalization computed for each variant, on both the U-Net and the classical method.
 
 ### Heart and thorax segmentation
 
@@ -220,7 +255,7 @@ How well each measurement alone separates CHD from No_CHD, at any threshold (exa
 - **Why the chamber rules fail:**
   - Many CHD types look normal in the four-chamber view, for example defects of the great arteries. The literature estimates that the 4C view alone detects about half of CHD.
   - The defect type is unknown, so the cases that could show a disproportion cannot be singled out.
-  - nnU-Net was trained on 113 images from a single machine. On Heartbeat its segmentation is plausible on only a third of the images, and even then the chamber ratios are noisy.
+  - nnU-Net was trained on 113 images (103 train + 10 validation) from a single machine. On Heartbeat its segmentation is plausible on only a third of the images, and even then the chamber ratios are noisy.
 - **What would help:**
   - annotate a few Heartbeat images to measure the Dice there;
   - fine-tune nnU-Net on them;
