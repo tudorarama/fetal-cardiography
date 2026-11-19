@@ -72,10 +72,27 @@ def predict_rois(items, tag, trainer, fold="0", best=False, tta=True):
         cmd.append("--disable_tta")
     run(cmd)
 
+    def probabilities(cid):
+        return np.load(roi_out / f"{cid}.npz")["probabilities"].astype(np.float32)
+
+    # nnU-Net predicts in fp16 on the GPU; GTX 16xx cards sometimes give NaN for an
+    # image. Those images are predicted again on the CPU (fp32), same model.
+    nan = [cid for cid in boxes if np.isnan(probabilities(cid)).any()]
+    if nan:
+        print(f"NaN on the GPU for {len(nan)} image(s), predicting them again on the CPU: {nan}")
+        retry_in = PREDICTIONS_DIR / f"{tag}_roi_input_cpu"
+        if retry_in.exists():
+            shutil.rmtree(retry_in)
+        retry_in.mkdir(parents=True)
+        for cid in nan:
+            shutil.copy(roi_in / f"{cid}_0000.png", retry_in)
+        run([*cmd[:2], str(retry_in), *cmd[3:], "-device", "cpu"])
+        shutil.rmtree(retry_in)
+
     for cid, box in boxes.items():
-        prob = np.load(roi_out / f"{cid}.npz")["probabilities"].astype(np.float32)
-        if np.isnan(prob).any():  # nnU-Net predicts in fp16; GTX 16xx cards can produce NaN
-            raise SystemExit(f"{cid}: NaN in the prediction (fp16 on this GPU?)")
+        prob = probabilities(cid)
+        if np.isnan(prob).any():
+            raise SystemExit(f"{cid}: NaN in the prediction, also on the CPU")
         prob = prob.reshape(prob.shape[0], ROI_SIZE, ROI_SIZE).transpose(1, 2, 0)  # (H, W, C)
         full = uncrop(np.ascontiguousarray(prob), box, shapes[cid])  # zeros outside -> background
         cv2.imwrite(str(final / f"{cid}.png"), full.argmax(-1).astype(np.uint8))
