@@ -8,3 +8,7 @@ segment-anything
 matplotlib
 pandas
 tqdm
+# end-to-end demo (../app): stage-1 U-Nets and the browser page
+monai
+gradio>=6
+pytest
